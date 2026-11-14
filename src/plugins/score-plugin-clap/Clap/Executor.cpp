@@ -417,9 +417,11 @@ public:
   //! plug-in's declared audio port layout (a plug-in may assert on it, e.g.
   //! Floe). clap/ext/params.h: flush is [active ? audio-thread :
   //! main-thread], and this is the audio thread, not within process().
+  //! With `inputs_only`, only those of the parameters whose input carries a
+  //! value in this block.
   void flush_last_values(
       const clap_plugin_t* plugin, const clap_plugin_params_t* params,
-      bool own_cookies) noexcept
+      bool own_cookies, bool inputs_only = false) noexcept
   {
     if(!plugin || m_param_ins.empty() || !params || !params->flush)
       return;
@@ -430,6 +432,8 @@ public:
     in.all_events.clear();
     for(std::size_t i = 0; i < m_param_ins.size(); ++i)
     {
+      if(inputs_only && !carries_value(i))
+        continue;
       const auto& param_info = m_param_ins[i];
       clap_event_param_value_t ev{};
       ev.header.size = sizeof(clap_event_param_value_t);
@@ -446,6 +450,8 @@ public:
       ev.value = m_last_values[i];
       in.param_events.push_back(ev);
     }
+    if(in.param_events.empty())
+      return;
     for(auto& ev : in.param_events)
       in.all_events.push_back(reinterpret_cast<clap_event_header_t*>(&ev));
 
@@ -457,7 +463,12 @@ public:
 
     params->flush(plugin, &evs, &o_evs);
     if(own_cookies)
-      std::fill(m_unsent.begin(), m_unsent.end(), 0);
+    {
+      if(inputs_only)
+        sent_input_values();
+      else
+        std::fill(m_unsent.begin(), m_unsent.end(), 0);
+    }
   }
 
   //! The first instance was given the values the parameter inputs carry
@@ -476,6 +487,25 @@ public:
       if(!is_vector_value(tv.value))
         return true;
     return false;
+  }
+
+  //! An instance that processes but is not given this block: the values the
+  //! parameter inputs carry, which the graph clears once the node ran, reach
+  //! it through clap.params.flush, as they would when it starts processing.
+  //! [active ? audio-thread : main-thread], not concurrently to its process().
+  void flush_input_values(PluginInstance& inst, bool processing, bool own_cookies) noexcept
+  {
+    if(!processing)
+      return;
+    for(std::size_t i = 0; i < parameter_ins.size(); ++i)
+    {
+      const auto& info = m_param_ins[i];
+      for(const auto& tv : parameter_ins[i]->data.get_data())
+        if(!is_vector_value(tv.value))
+          m_last_values[i] = std::clamp(
+              ossia::convert<double>(tv.value), info.min_value, info.max_value);
+    }
+    flush_last_values(inst.plugin, inst.ext_params, own_cookies, true);
   }
 
   //! The values the plug-in sent out for its writable parameters, from its
@@ -1266,8 +1296,9 @@ public:
     if(samples == 0)
     {
       // Never call a plug-in with an empty block; CLAP bounds the frame count
-      // at [1, INT32_MAX]. What the tick carried goes out at the top of the
-      // next real one.
+      // at [1, INT32_MAX]. The notes the tick carried go out at the top of
+      // the next real one, its parameter values now.
+      flush_input_values(m_instance, m_processing, true);
       stash_midi();
       return;
     }
@@ -1474,8 +1505,9 @@ public:
     if(samples == 0)
     {
       // Never call a plug-in with an empty block; CLAP bounds the frame count
-      // at [1, INT32_MAX]. What the tick carried goes out at the top of the
-      // next real one.
+      // at [1, INT32_MAX]. The notes the tick carried go out at the top of
+      // the next real one, its parameter values now.
+      flush_input_values(m_instance, m_processing, true);
       stash_midi();
       return;
     }
@@ -1724,6 +1756,19 @@ public:
       stop_instance(*p.inst, p.processing);
   }
 
+  //! When it goes, at the end of a block: the instances that process but
+  //! the block did not reach, from `given` on, get its parameter values
+  struct skipped_voices
+  {
+    clap_node_mono& self;
+    std::size_t given{};
+    ~skipped_voices()
+    {
+      for(std::size_t v = given; v < self.m_poly.size(); ++v)
+        self.flush_input_values(*self.m_poly[v].inst, self.m_poly[v].processing, v == 0);
+    }
+  };
+
   //! The prologue of every run, before the instances are processed
   [[nodiscard]] bool ready(const ossia::token_request& t, ossia::exec_state_facade e)
   {
@@ -1897,12 +1942,14 @@ public:
     if(!ready(t, e))
       return;
 
+    skipped_voices skipped{*this};
+
     auto [offset, samples] = e.timings(t);
     if(samples == 0)
     {
       // Never call a plug-in with an empty block; CLAP bounds the frame count
-      // at [1, INT32_MAX]. What the tick carried goes out at the top of the
-      // next real one.
+      // at [1, INT32_MAX]. The notes the tick carried go out at the top of
+      // the next real one, its parameter values now.
       stash_midi();
       return;
     }
@@ -1978,6 +2025,7 @@ public:
       process.audio_outputs_count = 1;
       build_voice_input(m_voice_input, current_channel);
       do_process(cur.inst->plugin, process, m_voice_input, m_output_events);
+      skipped.given = current_channel + 1;
       if(current_channel == 0)
       {
         sent_input_values();
@@ -2010,12 +2058,14 @@ public:
     if(!ready(t, e))
       return;
 
+    skipped_voices skipped{*this};
+
     auto [offset, samples] = e.timings(t);
     if(samples == 0)
     {
       // Never call a plug-in with an empty block; CLAP bounds the frame count
-      // at [1, INT32_MAX]. What the tick carried goes out at the top of the
-      // next real one.
+      // at [1, INT32_MAX]. The notes the tick carried go out at the top of
+      // the next real one, its parameter values now.
       stash_midi();
       return;
     }
@@ -2085,6 +2135,7 @@ public:
       process.audio_outputs_count = 1;
       build_voice_input(m_voice_input, current_channel);
       do_process(cur.inst->plugin, process, m_voice_input, m_output_events);
+      skipped.given = current_channel + 1;
       if(current_channel == 0)
       {
         sent_input_values();
