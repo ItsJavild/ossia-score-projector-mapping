@@ -405,7 +405,10 @@ public:
               5, QRhiShaderResourceBinding::FragmentStage, pw.warpUBO),
           QRhiShaderResourceBinding::uniformBuffer(6, QRhiShaderResourceBinding::FragmentStage, pw.calibrationUBO)};
 
-      const auto& mesh = renderer.defaultTriangle();
+      // The lattice is a list of independent cell triangles. The default
+      // fullscreen mesh uses TriangleStrip, which would join adjacent cells.
+      score::gfx::TexturedTriangle mesh{false};
+      mesh.topology = QRhiGraphicsPipeline::Triangles;
       pw.pipeline = score::gfx::buildPipeline(
           renderer, mesh, m_vertexS, m_fragmentS, rt, nullptr, pw.uvRectUBO,
           pw.samplers, score::gfx::premultipliedOverBlend(), {extraBindings, 3});
