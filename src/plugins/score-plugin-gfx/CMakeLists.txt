@@ -444,6 +444,7 @@ set(HDRS
 
 set(SRCS    
     Gfx/Window/OutputMapping.cpp # Must go before the others in unity build
+    Gfx/Window/OutputMappingCanvas.cpp
   
     ${SPOUT_SRCS}
     ${SYPHON_SRCS}

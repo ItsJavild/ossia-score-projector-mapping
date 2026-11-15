@@ -513,6 +513,8 @@ public:
     }
   }
 
+  score::gfx::MultiWindowNode* node() const noexcept { return m_node; }
+
   // Called after windows are created by createOutput() to connect Qt signals
   void connectWindowSignals()
   {

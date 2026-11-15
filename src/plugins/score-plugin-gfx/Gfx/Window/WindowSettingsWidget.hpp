@@ -1,4 +1,7 @@
 #pragma once
+#include <functional>
+#include <array>
+#include <vector>
 
 #include <Device/Protocol/ProtocolSettingsWidget.hpp>
 
@@ -29,18 +32,22 @@ namespace Gfx
 class DesktopLayoutCanvas;
 class OutputMappingCanvas;
 class OutputPreviewWindows;
+struct OutputMapping;
 
 class WindowSettingsWidget final : public Device::ProtocolSettingsWidget
 {
 public:
-  explicit WindowSettingsWidget(QWidget* parent = nullptr);
+  explicit WindowSettingsWidget(QWidget* parent = nullptr, bool live = false);
   ~WindowSettingsWidget();
+
+  std::function<void(const std::vector<OutputMapping>&)> onLiveMappingsChanged;
 
   Device::DeviceSettings getSettings() const override;
 
   void setSettings(const Device::DeviceSettings& settings) override;
 
 private:
+  bool m_live{false};
   void onModeChanged(int index);
   void onSelectionChanged(int outputIndex);
   void updatePropertiesFromSelection();
@@ -68,6 +75,8 @@ private:
   QLabel* m_srcSizePixelLabel{};
   QSpinBox* m_inputWidth{};
   QSpinBox* m_inputHeight{};
+
+  std::array<QDoubleSpinBox*, 5> m_calibration{};
 
   // Soft-edge blending controls
   QDoubleSpinBox* m_blendLeftW{};

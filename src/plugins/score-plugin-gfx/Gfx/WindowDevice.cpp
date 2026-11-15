@@ -24,6 +24,12 @@
 #include <ossia-qt/invoke.hpp>
 
 #include <QMenu>
+#include <QDialog>
+#include <QDialogButtonBox>
+#include <QVBoxLayout>
+#include <Explorer/Commands/Update/UpdateDeviceSettings.hpp>
+#include <Explorer/DocumentPlugin/DeviceDocumentPlugin.hpp>
+#include <score/command/Dispatchers/CommandDispatcher.hpp>
 #include <QScreen>
 #include <QWindow>
 
@@ -98,6 +104,40 @@ void WindowDevice::addAddress(const Device::FullAddressSettings& settings)
 
 void WindowDevice::setupContextMenu(QMenu& menu) const
 {
+  if(dynamic_cast<multiwindow_device*>(m_dev.get()))
+  {
+    auto* action = menu.addAction(tr("Edit Live Mapping…"));
+    connect(action, &QAction::triggered, this, [this] {
+      auto* self = const_cast<WindowDevice*>(this);
+      QDialog dialog;
+      dialog.setWindowTitle(tr("Live Multi-Window Mapping"));
+      dialog.resize(1100, 760);
+      auto* layout = new QVBoxLayout(&dialog);
+      auto* editor = new WindowSettingsWidget(&dialog, true);
+      editor->setSettings(m_settings);
+      layout->addWidget(editor);
+      const auto original = m_settings.deviceSpecificSettings.value<WindowSettings>().outputs;
+      editor->onLiveMappingsChanged = [guard = QPointer<WindowDevice>{self}](const auto& mappings) {
+        if(guard) guard->applyLiveMappings(mappings);
+      };
+      auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dialog);
+      layout->addWidget(buttons);
+      connect(buttons, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
+      connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+      connect(this, &QObject::destroyed, &dialog, &QDialog::reject);
+      QPointer<WindowDevice> guard{self};
+      const int result = dialog.exec();
+      if(!guard) return;
+      if(result == QDialog::Accepted)
+      {
+        CommandDispatcher<> dispatcher{m_ctx.commandStack};
+        dispatcher.submit<Explorer::Command::UpdateDeviceSettings>(
+            m_ctx.plugin<Explorer::DeviceDocumentPlugin>(), m_settings.name, editor->getSettings());
+      }
+      else
+        self->applyLiveMappings(original);
+    });
+  }
   if(auto w = this->window())
   {
     auto showhide = new QAction;
@@ -113,6 +153,50 @@ void WindowDevice::setupContextMenu(QMenu& menu) const
     }
     menu.addAction(showhide);
   }
+}
+
+void WindowDevice::applyLiveMappings(const std::vector<OutputMapping>& mappings)
+{
+  auto* device = dynamic_cast<multiwindow_device*>(m_dev.get());
+  if(!device) return;
+  auto* node = device->node();
+  const auto& outputs = node->windowOutputs();
+  if(outputs.size() != mappings.size()) return;
+  node->updateMappings(mappings);
+  for(int i = 0; i < int(mappings.size()); ++i)
+  {
+    const auto& m = mappings[i];
+    if(auto w = outputs[i].window)
+    {
+      const auto screens = QGuiApplication::screens();
+      if(m.screenIndex >= 0 && m.screenIndex < screens.size() && w->screen() != screens[m.screenIndex])
+        w->setScreen(screens[m.screenIndex]);
+      if(m.fullscreen)
+      { if(w->visibility() != QWindow::FullScreen) w->showFullScreen(); }
+      else
+      {
+        if(w->visibility() == QWindow::FullScreen) w->showNormal();
+        if(w->position() != m.windowPosition) w->setPosition(m.windowPosition);
+        if(w->size() != m.windowSize) w->resize(m.windowSize);
+      }
+    }
+  }
+}
+
+bool WindowDevice::applySettingsInPlace(const Device::DeviceSettings& settings)
+{
+  const auto old = m_settings.deviceSpecificSettings.value<WindowSettings>();
+  const auto next = settings.deviceSpecificSettings.value<WindowSettings>();
+  if(dynamic_cast<multiwindow_device*>(m_dev.get()) && settings.name == m_settings.name
+     && next.mode == WindowMode::MultiWindow && next.outputs.size() == old.outputs.size()
+     && next.inputWidth == old.inputWidth && next.inputHeight == old.inputHeight
+     && next.flag == old.flag && next.format == old.format)
+  {
+    applyLiveMappings(next.outputs);
+    m_settings = settings;
+    return true;
+  }
+  return false;
 }
 
 void WindowDevice::disconnect()

@@ -73,6 +73,9 @@ public:
   void addAddress(const Device::FullAddressSettings& settings) override;
   void setupContextMenu(QMenu&) const override;
   ossia::net::device_base* getDevice() const override { return m_dev.get(); }
+  bool applySettingsInPlace(const Device::DeviceSettings&);
+  W_INVOKABLE(applySettingsInPlace)
+  void applyLiveMappings(const std::vector<OutputMapping>&);
   void disconnect() override;
   bool reconnect() override;
 

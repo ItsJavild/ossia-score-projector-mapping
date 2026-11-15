@@ -1,3 +1,4 @@
+#include <QMetaMethod>
 // This is an open source non-commercial project. Dear PVS-Studio, please check
 // it. PVS-Studio Static Code Analyzer for C, C++ and C#: http://www.viva64.com
 #include "DeviceInterface.hpp"
@@ -376,6 +377,18 @@ void DeviceInterface::recreate(const Device::Node&) { }
 
 void DeviceInterface::updateSettings(const Device::DeviceSettings& newsettings)
 {
+  // Optional Qt hook for devices which can update their current output in place.
+  // Keep this outside the virtual interface so existing device add-on vtables
+  // and the device library's dependency direction remain unchanged.
+  const int method = metaObject()->indexOfMethod("applySettingsInPlace(Device::DeviceSettings)");
+  if(method >= 0)
+  {
+    bool applied = false;
+    if(metaObject()->method(method).invoke(this, Qt::DirectConnection,
+          Q_RETURN_ARG(bool, applied), Q_ARG(Device::DeviceSettings, newsettings)) && applied)
+      return;
+  }
+
   // TODO we have to maintain the prior connection state
   // if we were disconnected, we stay disconnected
   // else we reconnect. See in Minuit / MIDI also.

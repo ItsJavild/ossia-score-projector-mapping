@@ -4,6 +4,7 @@
 
 #include <QApplication>
 #include <QPainter>
+#include <QPainterPath>
 #include <QScreen>
 #include <QWindow>
 
@@ -60,6 +61,18 @@ void PreviewWidget::setBlend(
 void PreviewWidget::setSourceRect(QRectF rect)
 {
   m_sourceRect = rect;
+  update();
+}
+
+void PreviewWidget::setCalibration(const OutputCalibration& calibration)
+{
+  m_calibration = calibration;
+  update();
+}
+
+void PreviewWidget::setMeshWarp(const MeshWarp& mesh)
+{
+  m_meshWarp = mesh;
   update();
 }
 
@@ -160,13 +173,61 @@ static void paintBlendGradients(
 void PreviewWidget::paintEvent(QPaintEvent*)
 {
   QPainter p(this);
+  if(!m_meshWarp.enabled())
+  {
+    paintContent(p);
+    return;
+  }
+  QImage content(size(), QImage::Format_RGB32);
+  { QPainter source(&content); paintContent(source, false); }
+  p.fillRect(rect(), Qt::black);
+  p.setRenderHint(QPainter::SmoothPixmapTransform);
+  const auto& mesh = m_meshWarp;
+  auto sourcePoint = [&](int x, int y) {
+    return QPointF(double(x) * width() / (mesh.columns - 1), double(y) * height() / (mesh.rows - 1));
+  };
+  auto targetPoint = [&](int x, int y) {
+    QPointF c = mesh.points[y * mesh.columns + x] - QPointF(.5, .5);
+    if(m_mirrorX) c.setX(-c.x());
+    if(m_mirrorY) c.setY(-c.y());
+    if(m_rotation == 90) c = QPointF(-c.y(), c.x());
+    else if(m_rotation == 180) c = -c;
+    else if(m_rotation == 270) c = QPointF(c.y(), -c.x());
+    return QPointF((c.x() + .5) * width(), (c.y() + .5) * height());
+  };
+  auto triangle = [&](QPoint a, QPoint b, QPoint c) {
+    const QPointF sa = sourcePoint(a.x(), a.y()), sb = sourcePoint(b.x(), b.y()), sc = sourcePoint(c.x(), c.y());
+    const QPointF da = targetPoint(a.x(), a.y()), db = targetPoint(b.x(), b.y()), dc = targetPoint(c.x(), c.y());
+    QPolygonF src, dst;
+    src << sa << sb << sb + sc - sa << sc;
+    dst << da << db << db + dc - da << dc;
+    QTransform transform;
+    if(!QTransform::quadToQuad(src, dst, transform)) return;
+    QPainterPath clip;
+    clip.moveTo(da); clip.lineTo(db); clip.lineTo(dc); clip.closeSubpath();
+    p.save();
+    p.setClipPath(clip);
+    p.setTransform(transform);
+    p.drawImage(QPointF(0, 0), content);
+    p.restore();
+  };
+  for(int y = 0; y + 1 < mesh.rows; ++y)
+    for(int x = 0; x + 1 < mesh.columns; ++x)
+    {
+      triangle({x, y}, {x, y + 1}, {x + 1, y});
+      triangle({x + 1, y}, {x, y + 1}, {x + 1, y + 1});
+    }
+}
+
+void PreviewWidget::paintContent(QPainter& p, bool transform, bool calibrate)
+{
   p.fillRect(rect(), Qt::black);
 
   // Build combined transform: content → warp → rotation+mirror → screen
   QTransform combined;
 
   // Corner warp (applied first to content coordinates)
-  if(!m_cornerWarp.isIdentity())
+  if(transform && !m_cornerWarp.isIdentity())
   {
     double w = width(), h = height();
     QPolygonF src;
@@ -183,7 +244,7 @@ void PreviewWidget::paintEvent(QPaintEvent*)
   }
 
   // Rotation + mirror (applied after warp, in screen space)
-  if(m_rotation != 0 || m_mirrorX || m_mirrorY)
+  if(transform && (m_rotation != 0 || m_mirrorX || m_mirrorY))
   {
     double cx = width() / 2.0, cy = height() / 2.0;
     QTransform rm;
@@ -201,6 +262,34 @@ void PreviewWidget::paintEvent(QPaintEvent*)
   if(!combined.isIdentity())
     p.setTransform(combined);
 
+  if(calibrate && !m_calibration.isIdentity())
+  {
+    QImage image(size(), QImage::Format_RGB32);
+    { QPainter source(&image); paintContent(source, false, false); }
+    const auto& c = m_calibration;
+    auto ramp = [](double t, const EdgeBlend& edge) {
+      return edge.width > 0.f ? std::pow(qBound(0., t / edge.width, 1.), double(edge.gamma)) : 1.;
+    };
+    for(int y = 0; y < image.height(); ++y)
+    {
+      auto* pixels = reinterpret_cast<QRgb*>(image.scanLine(y));
+      for(int x = 0; x < image.width(); ++x)
+      {
+        const double u = (x + .5) / image.width(), v = (y + .5) / image.height();
+        const double alpha = ramp(u, m_blendLeft) * ramp(1. - u, m_blendRight)
+                             * ramp(v, m_blendTop) * ramp(1. - v, m_blendBottom);
+        auto channel = [&](int value, float gain) {
+          const double linear = alpha > 1e-8 ? value / (255. * alpha) : 0.;
+          const double corrected = std::pow(qMax(0., linear), 1. / c.gamma) * gain;
+          return qBound(0, qRound(255. * alpha * (corrected + c.blackLevel * (1. - qBound(0., corrected, 1.)))), 255);
+        };
+        pixels[x] = qRgb(channel(qRed(pixels[x]), c.red), channel(qGreen(pixels[x]), c.green), channel(qBlue(pixels[x]), c.blue));
+      }
+    }
+    p.drawImage(rect(), image);
+    return;
+  }
+
   switch(m_content)
   {
     case PreviewContent::Black:
@@ -215,6 +304,7 @@ void PreviewWidget::paintEvent(QPaintEvent*)
       return;
     }
 
+    case PreviewContent::GlobalText:
     case PreviewContent::GlobalTestCard: {
       if(!m_globalTestCard.isNull())
       {
@@ -231,6 +321,21 @@ void PreviewWidget::paintEvent(QPaintEvent*)
       }
       paintBlendGradients(
           p, rect(), m_blendLeft, m_blendRight, m_blendTop, m_blendBottom);
+      return;
+    }
+
+    case PreviewContent::White:
+    case PreviewContent::Gray:
+    case PreviewContent::Red:
+    case PreviewContent::Green:
+    case PreviewContent::Blue: {
+      QColor color = Qt::white;
+      if(m_content == PreviewContent::Gray) color = QColor(128, 128, 128);
+      if(m_content == PreviewContent::Red) color = Qt::red;
+      if(m_content == PreviewContent::Green) color = Qt::green;
+      if(m_content == PreviewContent::Blue) color = Qt::blue;
+      p.fillRect(rect(), color);
+      paintBlendGradients(p, rect(), m_blendLeft, m_blendRight, m_blendTop, m_blendBottom);
       return;
     }
 
@@ -320,6 +425,8 @@ void OutputPreviewWindows::syncToMappings(const std::vector<OutputMapping>& mapp
     pw->setSourceRect(m.sourceRect);
     pw->setBlend(m.blendLeft, m.blendRight, m.blendTop, m.blendBottom);
     pw->setCornerWarp(m.cornerWarp);
+    pw->setMeshWarp(m.meshWarp);
+    pw->setCalibration(m.calibration);
     pw->setTransform(m.rotation, m.mirrorX, m.mirrorY);
     if(!m_globalTestCard.isNull())
       pw->setGlobalTestCard(m_globalTestCard);
@@ -385,6 +492,7 @@ void OutputPreviewWindows::setSyncPositions(bool sync)
 void OutputPreviewWindows::setPreviewContent(PreviewContent mode)
 {
   m_content = mode;
+  rebuildGlobalTestCard();
   for(auto* pw : m_windows)
     pw->setPreviewContent(mode);
 }
@@ -401,7 +509,8 @@ void OutputPreviewWindows::setInputResolution(QSize sz)
 void OutputPreviewWindows::rebuildGlobalTestCard()
 {
   m_globalTestCard
-      = renderTestCard(m_inputResolution.width(), m_inputResolution.height());
+      = (m_content == PreviewContent::GlobalText ? renderTextTestCard : renderTestCard)(
+          m_inputResolution.width(), m_inputResolution.height());
   for(auto* pw : m_windows)
     pw->setGlobalTestCard(m_globalTestCard);
 }

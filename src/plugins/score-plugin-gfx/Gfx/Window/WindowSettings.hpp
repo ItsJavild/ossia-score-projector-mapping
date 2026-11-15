@@ -3,6 +3,10 @@
 #include <QRectF>
 #include <QSize>
 #include <QString>
+#include <vector>
+#include <QPolygonF>
+#include <QTransform>
+#include <cmath>
 
 namespace Gfx
 {
@@ -62,6 +66,55 @@ struct CornerWarp
   }
 };
 
+// Optional regular lattice in output UV space. Empty keeps legacy perspective warp.
+struct MeshWarp
+{
+  int columns{0};
+  int rows{0};
+  std::vector<QPointF> points;
+
+  bool enabled() const noexcept
+  {
+    return columns >= 2 && rows >= 2 && columns <= 17 && rows <= 17
+           && points.size() == std::size_t(columns * rows);
+  }
+
+  bool hasValidCells() const noexcept
+  {
+    if(!enabled()) return false;
+    auto area = [](QPointF a, QPointF b, QPointF c) {
+      const auto u = b - a, v = c - a;
+      return u.x() * v.y() - u.y() * v.x();
+    };
+    for(const auto& p : points)
+      if(!std::isfinite(p.x()) || !std::isfinite(p.y())) return false;
+    for(int y = 0; y + 1 < rows; ++y)
+      for(int x = 0; x + 1 < columns; ++x)
+      {
+        const auto a = points[y * columns + x], b = points[y * columns + x + 1];
+        const auto c = points[(y + 1) * columns + x], d = points[(y + 1) * columns + x + 1];
+        if(area(a, b, c) <= 1e-8 || area(b, d, c) <= 1e-8) return false;
+      }
+    return true;
+  }
+
+  void reset(int cols, int lines, const CornerWarp& corners)
+  {
+    columns = qBound(2, cols, 17);
+    rows = qBound(2, lines, 17);
+    points.clear();
+    // Initialize from the existing perspective mapping, preserving calibration.
+    QPolygonF src, dst;
+    src << QPointF(0, 0) << QPointF(1, 0) << QPointF(1, 1) << QPointF(0, 1);
+    dst << corners.topLeft << corners.topRight << corners.bottomRight << corners.bottomLeft;
+    QTransform transform;
+    QTransform::quadToQuad(src, dst, transform);
+    for(int y = 0; y < rows; ++y)
+      for(int x = 0; x < columns; ++x)
+        points.push_back(transform.map(QPointF(double(x) / (columns - 1), double(y) / (rows - 1))));
+  }
+};
+
 enum class OutputLockMode : int
 {
   Free = 0,       // No constraints
@@ -86,6 +139,15 @@ inline QPoint windowPositionForSource(QPoint p) noexcept
   return p.isNull() ? defaultWindowPosition : p;
 }
 
+struct OutputCalibration
+{
+  float red{1.f}, green{1.f}, blue{1.f};
+  float gamma{1.f};
+  float blackLevel{0.f};
+  bool isIdentity() const noexcept
+  { return red == 1.f && green == 1.f && blue == 1.f && gamma == 1.f && blackLevel == 0.f; }
+};
+
 struct OutputMapping
 {
   QRectF sourceRect{0.0, 0.0, 1.0, 1.0}; // UV coords in input texture
@@ -105,6 +167,8 @@ struct OutputMapping
 
   // 4-corner perspective warp (output UV space)
   CornerWarp cornerWarp;
+  MeshWarp meshWarp;
+  OutputCalibration calibration;
 
   OutputLockMode lockMode{OutputLockMode::Free};
 

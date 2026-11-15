@@ -113,6 +113,8 @@ public:
     QRhiBuffer* uvRectUBO{};
     QRhiBuffer* blendUBO{};
     QRhiBuffer* warpUBO{};
+    QRhiBuffer* meshVertices{};
+    QRhiBuffer* calibrationUBO{};
     std::array<score::gfx::Sampler, 1> samplers{};
     QRhiShaderResourceBindings* srb{};
     QRectF sourceRect{0, 0, 1, 1};
@@ -175,11 +177,17 @@ public:
           float mirrorY;      // 0.0 or 1.0
       };
 
+      layout(std140, binding = 6) uniform Calibration {
+          vec4 colorGain; // RGB gains, output gamma
+          vec4 blackFloor;
+      };
+
       void main()
       {
           vec2 tc = v_texcoord;
 
           // Apply rotation + mirror transform (in screen UV space)
+          if(warpEnabled >= 0.0)
           {
               // Center at 0.5, 0.5
               vec2 c = tc - 0.5;
@@ -266,7 +274,9 @@ public:
               alpha *= pow(clamp(tc.y / blendWidths.w, 0.0, 1.0), blendGammas.w);
 
           alpha = clamp(alpha, 0.0, 1.0);
-          fragColor = vec4(fragColor.rgb * alpha, alpha);
+          vec3 corrected = pow(max(fragColor.rgb, vec3(0.0)), vec3(1.0 / colorGain.w)) * colorGain.rgb;
+          corrected = corrected * alpha + blackFloor.x * alpha * (vec3(1.0) - clamp(corrected, 0.0, 1.0));
+          fragColor = vec4(corrected, alpha);
       }
       )_";
 
@@ -337,6 +347,14 @@ public:
         QByteArray("MultiWindowRenderer::warpUBO_") + QByteArray::number(index));
     pw.warpUBO->create();
 
+    // At most 17 x 17 control points, six vertices per cell, planar position/UV bindings.
+    pw.meshVertices = rhi.newBuffer(QRhiBuffer::Dynamic, QRhiBuffer::VertexBuffer,
+                                    16 * 16 * 6 * 4 * sizeof(float));
+    pw.meshVertices->create();
+
+    pw.calibrationUBO = rhi.newBuffer(QRhiBuffer::Dynamic, QRhiBuffer::UniformBuffer, 8 * sizeof(float));
+    pw.calibrationUBO->create();
+
     // Seed initial UBO contents if we were given a batch to piggy-back on.
     // When `res` is null (lazy build from initWindowSwapChain) we skip the
     // initial upload; renderSubRegion() re-uploads every frame anyway.
@@ -353,7 +371,7 @@ public:
           wo.blendTop.gamma,   wo.blendBottom.gamma};
       res->updateDynamicBuffer(pw.blendUBO, 0, sizeof(blendData), blendData);
 
-      float warpEnabled = wo.cornerWarp.isIdentity() ? 0.0f : 1.0f;
+      float warpEnabled = wo.meshWarp.enabled() ? -1.f : (wo.cornerWarp.isIdentity() ? 0.0f : 1.0f);
       auto hom = computeHomographyUBO(wo.cornerWarp);
       float warpData[16] = {};
       std::copy(hom.begin(), hom.end(), warpData);
@@ -380,16 +398,17 @@ public:
       score::gfx::TextureRenderTarget rt;
       rt.renderPass = wo.renderPassDescriptor;
 
-      QRhiShaderResourceBinding extraBindings[2] = {
+      QRhiShaderResourceBinding extraBindings[3] = {
           QRhiShaderResourceBinding::uniformBuffer(
               4, QRhiShaderResourceBinding::FragmentStage, pw.blendUBO),
           QRhiShaderResourceBinding::uniformBuffer(
-              5, QRhiShaderResourceBinding::FragmentStage, pw.warpUBO)};
+              5, QRhiShaderResourceBinding::FragmentStage, pw.warpUBO),
+          QRhiShaderResourceBinding::uniformBuffer(6, QRhiShaderResourceBinding::FragmentStage, pw.calibrationUBO)};
 
       const auto& mesh = renderer.defaultTriangle();
       pw.pipeline = score::gfx::buildPipeline(
           renderer, mesh, m_vertexS, m_fragmentS, rt, nullptr, pw.uvRectUBO,
-          pw.samplers, score::gfx::premultipliedOverBlend(), {extraBindings, 2});
+          pw.samplers, score::gfx::premultipliedOverBlend(), {extraBindings, 3});
     }
   }
 
@@ -407,6 +426,10 @@ public:
     pw.uvRectUBO = nullptr;
     delete pw.blendUBO;
     pw.blendUBO = nullptr;
+    delete pw.calibrationUBO;
+    pw.calibrationUBO = nullptr;
+    delete pw.meshVertices;
+    pw.meshVertices = nullptr;
     delete pw.warpUBO;
     pw.warpUBO = nullptr;
   }
@@ -506,7 +529,7 @@ private:
       if(!res)
         res = renderer.state.rhi->nextResourceUpdateBatch();
 
-      float warpEnabled = wo.cornerWarp.isIdentity() ? 0.0f : 1.0f;
+      float warpEnabled = wo.meshWarp.enabled() ? -1.f : (wo.cornerWarp.isIdentity() ? 0.0f : 1.0f);
       auto hom = computeHomographyUBO(wo.cornerWarp);
       float warpData[16] = {};
       std::copy(hom.begin(), hom.end(), warpData);
@@ -515,6 +538,43 @@ private:
       warpData[14] = wo.mirrorX ? 1.0f : 0.0f;
       warpData[15] = wo.mirrorY ? 1.0f : 0.0f;
       res->updateDynamicBuffer(pw.warpUBO, 0, sizeof(warpData), warpData);
+    }
+
+    if(!res) res = renderer.state.rhi->nextResourceUpdateBatch();
+    const auto& c = wo.calibration;
+    const float calibration[] = {c.red, c.green, c.blue, c.gamma, c.blackLevel, 0.f, 0.f, 0.f};
+    res->updateDynamicBuffer(pw.calibrationUBO, 0, sizeof(calibration), calibration);
+    int meshVertexCount = 0;
+    if(wo.meshWarp.enabled())
+    {
+      const auto& mesh = wo.meshWarp;
+      meshVertexCount = (mesh.columns - 1) * (mesh.rows - 1) * 6;
+      std::vector<float> data(meshVertexCount * 4);
+      int vertex = 0;
+      auto append = [&](int x, int y) {
+        QPointF p = mesh.points[y * mesh.columns + x];
+        // The fragment's legacy inverse screen transform is replaced by geometry.
+        QPointF c = p - QPointF(.5, .5);
+        if(wo.mirrorX) c.setX(-c.x());
+        if(wo.mirrorY) c.setY(-c.y());
+        if(wo.rotation == 90) c = QPointF(-c.y(), c.x());
+        else if(wo.rotation == 180) c = -c;
+        else if(wo.rotation == 270) c = QPointF(c.y(), -c.x());
+        p = c + QPointF(.5, .5);
+        data[2 * vertex] = float(2 * p.x() - 1);
+        data[2 * vertex + 1] = float(1 - 2 * p.y());
+        data[2 * meshVertexCount + 2 * vertex] = float(x) / (mesh.columns - 1);
+        data[2 * meshVertexCount + 2 * vertex + 1] = 1.f - float(y) / (mesh.rows - 1);
+        ++vertex;
+      };
+      for(int y = 0; y + 1 < mesh.rows; ++y)
+        for(int x = 0; x + 1 < mesh.columns; ++x)
+        {
+          append(x, y); append(x, y + 1); append(x + 1, y);
+          append(x + 1, y); append(x, y + 1); append(x + 1, y + 1);
+        }
+      if(!res) res = renderer.state.rhi->nextResourceUpdateBatch();
+      res->updateDynamicBuffer(pw.meshVertices, 0, data.size() * sizeof(float), data.data());
     }
 
     cb.beginPass(rt, Qt::black, {0.0f, 0}, res);
@@ -526,7 +586,16 @@ private:
       cb.setViewport(QRhiViewport(0, 0, sz.width(), sz.height()));
 
       const auto& mesh = renderer.defaultTriangle();
-      mesh.draw(m_mesh, cb);
+      if(meshVertexCount > 0)
+      {
+        const QRhiCommandBuffer::VertexInput bindings[] = {
+            {pw.meshVertices, 0},
+            {pw.meshVertices, quint32(meshVertexCount * 2 * sizeof(float))}};
+        cb.setVertexInput(0, 2, bindings);
+        cb.draw(meshVertexCount);
+      }
+      else
+        mesh.draw(m_mesh, cb);
     }
     cb.endPass();
   }
@@ -587,6 +656,24 @@ void MultiWindowNode::setRenderSize(QSize sz)
     m_onResize();
 }
 
+void MultiWindowNode::updateMappings(const std::vector<Gfx::OutputMapping>& mappings)
+{
+  if(mappings.size() != m_windowOutputs.size()) return;
+  m_mappings = mappings;
+  for(int i = 0; i < int(mappings.size()); ++i)
+  {
+    const auto& m = mappings[i];
+    setSourceRect(i, m.sourceRect);
+    setCornerWarp(i, m.cornerWarp);
+    setMeshWarp(i, m.meshWarp);
+    setCalibration(i, m.calibration);
+    setTransform(i, m.rotation, m.mirrorX, m.mirrorY);
+    const Gfx::EdgeBlend sides[] = {m.blendLeft, m.blendRight, m.blendTop, m.blendBottom};
+    for(int side = 0; side < 4; ++side)
+      setEdgeBlend(i, side, sides[side].width, sides[side].gamma);
+  }
+}
+
 void MultiWindowNode::setSourceRect(int windowIndex, QRectF rect)
 {
   if(windowIndex >= 0 && windowIndex < (int)m_windowOutputs.size())
@@ -610,6 +697,17 @@ void MultiWindowNode::setEdgeBlend(int windowIndex, int side, float width, float
   }
   target->width = width;
   target->gamma = gamma;
+}
+
+void MultiWindowNode::setCalibration(int index, const Gfx::OutputCalibration& calibration)
+{
+  if(index >= 0 && index < int(m_windowOutputs.size())) m_windowOutputs[index].calibration = calibration;
+}
+
+void MultiWindowNode::setMeshWarp(int windowIndex, const Gfx::MeshWarp& warp)
+{
+  if(windowIndex >= 0 && windowIndex < int(m_windowOutputs.size()))
+    m_windowOutputs[windowIndex].meshWarp = warp;
 }
 
 void MultiWindowNode::setCornerWarp(int windowIndex, const Gfx::CornerWarp& warp)
@@ -1043,6 +1141,8 @@ void MultiWindowNode::createOutput(score::gfx::OutputConfiguration conf)
     wo.blendTop = {mapping.blendTop.width, mapping.blendTop.gamma};
     wo.blendBottom = {mapping.blendBottom.width, mapping.blendBottom.gamma};
     wo.cornerWarp = mapping.cornerWarp;
+    wo.meshWarp = mapping.meshWarp;
+    wo.calibration = mapping.calibration;
     wo.rotation = mapping.rotation;
     wo.mirrorX = mapping.mirrorX;
     wo.mirrorY = mapping.mirrorY;

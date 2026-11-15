@@ -944,6 +944,11 @@ if(TARGET score_addon_trackingprotocols)
     PLUGINS score_plugin_deviceexplorer score_lib_device score_lib_state)
 endif()
 
+# Device updates can opt in to preserving the output used by live execution.
+score_add_test(test_unit_device_inplace_settings
+  SOURCES DeviceInPlaceSettingsTest.cpp
+  PLUGINS score_lib_device score_lib_state)
+
 # The explorer listens to exactly what it shows, across device tree swaps and
 # settings edits. GUI: needs the device explorer panel and its view.
 score_add_test(test_unit_device_listening
@@ -1478,18 +1483,20 @@ target_include_directories(test_unit_primitivecloud SYSTEM PRIVATE
   "${SCORE_ROOT_SOURCE_DIR}/src/plugins/score-plugin-threedim"
   "${3RDPARTY_FOLDER}/miniply")
 
-# --- multi-window output mapping serialization (score-plugin-gfx) -----------
-# JSON/DataStream of Gfx::OutputMapping. The specializations live in
-# OutputMapping.cpp and are not exported from the dynamic score_plugin_gfx
-# (hidden visibility), so the translation unit is compiled straight into the
-# test -- the same workaround tests/gfx/CMakeLists.txt applies to ISFNode.cpp.
-# It drags in QGraphicsView, hence the Widgets link; no widget is instantiated.
+# --- multi-window output mapping serialization ----------------------------
+# The serializer is independent of the graphics renderer. Compile its production
+# source directly so compatibility checks do not require linking the full GPU
+# plug-in or instantiating its application registry.
 if(TARGET score_plugin_gfx)
   score_add_test(test_unit_output_mapping_serialization
     SOURCES
       OutputMappingSerializationTest.cpp
-    PLUGINS score_plugin_gfx
+      "${SCORE_ROOT_SOURCE_DIR}/src/plugins/score-plugin-gfx/Gfx/Window/OutputMapping.cpp"
     LIBS ${QT_PREFIX}::Gui ${QT_PREFIX}::Widgets)
+  target_include_directories(test_unit_output_mapping_serialization PRIVATE
+    "${SCORE_ROOT_SOURCE_DIR}/src/plugins/score-plugin-gfx"
+    "${SCORE_ROOT_BINARY_DIR}/src/plugins/score-plugin-gfx")
+  target_compile_definitions(test_unit_output_mapping_serialization PRIVATE SCORE_PLUGIN_GFX_STATIC_DEFINE)
 endif()
 
 # --- shared-memory device settings serialization (score-plugin-gfx) ---------

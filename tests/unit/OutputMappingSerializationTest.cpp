@@ -317,3 +317,42 @@ TEST_CASE("OutputMapping DataStream round-trip", "[gfx][window][outputmapping]")
           == score::marshall<DataStream>(b).size());
   }
 }
+
+TEST_CASE("Projector mesh and calibration persist without changing legacy defaults", "[gfx][window][outputmapping]")
+{
+  auto mapping = fullyPopulated();
+  mapping.meshWarp.reset(7, 5, mapping.cornerWarp);
+  mapping.meshWarp.points[17] += QPointF(.01, .01);
+  mapping.calibration = {.9f, 1.1f, .8f, 1.2f, .025f};
+  for(const auto& result : {jsonRoundTrip(mapping), dsRoundTrip(mapping)})
+  {
+    checkEquivalent(mapping, result);
+    CHECK(result.meshWarp.columns == 7);
+    CHECK(result.meshWarp.rows == 5);
+    CHECK(result.meshWarp.points == mapping.meshWarp.points);
+    CHECK(result.calibration.red == mapping.calibration.red);
+    CHECK(result.calibration.green == mapping.calibration.green);
+    CHECK(result.calibration.blue == mapping.calibration.blue);
+    CHECK(result.calibration.gamma == mapping.calibration.gamma);
+    CHECK(result.calibration.blackLevel == mapping.calibration.blackLevel);
+  }
+  SECTION("Calibration without mesh has a bounded extension")
+  {
+    mapping.meshWarp = {};
+    const auto result = dsRoundTrip(mapping);
+    CHECK_FALSE(result.meshWarp.enabled());
+    CHECK(result.calibration.blackLevel == mapping.calibration.blackLevel);
+  }
+  SECTION("Old JSON has neutral additions")
+  {
+    const auto old = fromJson<Gfx::OutputMapping>(R"({"SourceRect":[0,0,1,1],"Rotation":90})");
+    CHECK_FALSE(old.meshWarp.enabled());
+    CHECK(old.calibration.isIdentity());
+    CHECK(old.rotation == 90);
+  }
+  SECTION("Malformed mesh is ignored")
+  {
+    const auto bad = fromJson<Gfx::OutputMapping>(R"({"MeshWarp":{"Columns":17,"Rows":17,"Points":[[0,0]]}})");
+    CHECK_FALSE(bad.meshWarp.enabled());
+  }
+}

@@ -37,6 +37,8 @@ set(SCORE_TEST_GUARD_SKIP_DIRS
   # project() and is configured by hand against a system LLVM. cases/*.cpp are
   # inputs the JIT compiles at runtime, not buildsystem sources.
   jit-min
+  # Standalone Qt-only projector checks, also built separately by projector-windows.yml.
+  projector-mapping
   # Fixture data, no code.
   testdata
   # Developer tools run by hand, not tests (e.g. the Bitfocus companion-modules

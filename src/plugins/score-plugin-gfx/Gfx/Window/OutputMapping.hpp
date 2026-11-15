@@ -35,6 +35,8 @@ public:
 
   // 4-corner perspective warp
   CornerWarp cornerWarp;
+  MeshWarp meshWarp;
+  OutputCalibration calibration;
 
   OutputLockMode lockMode{OutputLockMode::Free};
 
@@ -97,6 +99,7 @@ public:
   void setMappings(const std::vector<OutputMapping>& mappings);
   std::vector<OutputMapping> getMappings() const;
 
+  void autoBlendOverlaps();
   void addOutput();
   void removeSelectedOutput();
 
@@ -120,6 +123,7 @@ public:
   void exitWarpMode();
   bool inWarpMode() const noexcept { return m_warpItemIndex >= 0; }
   void resetWarp();
+  void setMeshResolution(int columns, int rows);
 
   std::function<void(int)> onSelectionChanged;
   std::function<void(int)> onItemGeometryChanged;
@@ -147,7 +151,7 @@ private:
 
   // Warp mode state
   int m_warpItemIndex{-1};
-  QGraphicsEllipseItem* m_warpHandles[4]{};
+  std::vector<QGraphicsEllipseItem*> m_warpHandles;
   QGraphicsPolygonItem* m_warpQuad{};
   std::vector<QGraphicsLineItem*> m_warpGrid;
   bool m_warpDragging{false};

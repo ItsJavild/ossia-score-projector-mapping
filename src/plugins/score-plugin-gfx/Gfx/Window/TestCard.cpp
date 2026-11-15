@@ -4,6 +4,38 @@
 
 namespace Gfx
 {
+QImage renderTextTestCard(int w, int h)
+{
+  if(w < 1 || h < 1)
+    return {};
+  QImage img(w, h, QImage::Format_RGB32);
+  img.fill(QColor(24, 24, 24));
+  QPainter p(&img);
+  p.setRenderHint(QPainter::TextAntialiasing);
+  const int sizes[] = {12, 18, 24, 36, 48, 72, 96};
+  int y = 0;
+  while(y < h)
+  {
+    for(int size : sizes)
+    {
+      QFont font = p.font();
+      font.setPixelSize(size);
+      p.setFont(font);
+      const QFontMetrics fm(font);
+      const int lineHeight = fm.height() + 12;
+      p.setPen(Qt::white);
+      const QString text = QStringLiteral("%1 px  Aa Bb 0123456789  OSSIA SCORE  ").arg(size);
+      const int step = qMax(1, fm.horizontalAdvance(text));
+      for(int x = 0; x < w; x += step)
+        p.drawText(x, y + fm.ascent() + 6, text);
+      y += lineHeight;
+      if(y >= h)
+        break;
+    }
+  }
+  return img;
+}
+
 QImage renderTestCard(int w, int h)
 {
   if(w < 1 || h < 1)

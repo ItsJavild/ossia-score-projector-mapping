@@ -49,6 +49,8 @@ struct SCORE_PLUGIN_GFX_EXPORT MultiWindowNode : OutputNode
     EdgeBlendData blendLeft, blendRight, blendTop, blendBottom;
 
     Gfx::CornerWarp cornerWarp;
+    Gfx::MeshWarp meshWarp;
+    Gfx::OutputCalibration calibration;
 
     int rotation{0};
     bool mirrorX{false};
@@ -69,10 +71,13 @@ struct SCORE_PLUGIN_GFX_EXPORT MultiWindowNode : OutputNode
     return m_offscreenTarget;
   }
 
+  void updateMappings(const std::vector<Gfx::OutputMapping>& mappings);
   void setRenderSize(QSize sz);
   void setSourceRect(int windowIndex, QRectF rect);
   void setEdgeBlend(int windowIndex, int side, float width, float gamma);
   void setCornerWarp(int windowIndex, const Gfx::CornerWarp& warp);
+  void setCalibration(int windowIndex, const Gfx::OutputCalibration& calibration);
+  void setMeshWarp(int windowIndex, const Gfx::MeshWarp& warp);
   void setTransform(int windowIndex, int rotation, bool mirrorX, bool mirrorY);
   void setSwapchainFlag(Gfx::SwapchainFlag flag);
   void setSwapchainFormat(Gfx::SwapchainFormat format);

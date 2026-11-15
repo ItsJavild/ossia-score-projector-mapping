@@ -24,8 +24,9 @@ W_OBJECT_IMPL(Gfx::CollapsibleSection)
 namespace Gfx
 {
 
-WindowSettingsWidget::WindowSettingsWidget(QWidget* parent)
+WindowSettingsWidget::WindowSettingsWidget(QWidget* parent, bool live)
     : ProtocolSettingsWidget(parent)
+    , m_live{live}
 {
   m_deviceNameEdit = new State::AddressFragmentLineEdit{this};
   checkForChanges(m_deviceNameEdit);
@@ -113,6 +114,12 @@ WindowSettingsWidget::WindowSettingsWidget(QWidget* parent)
       m_previewContentCombo->addItem(tr("Per-Output Test Card"));
       m_previewContentCombo->addItem(tr("Global Test Card"));
       m_previewContentCombo->addItem(tr("Output ID"));
+      m_previewContentCombo->addItem(tr("Global Text / Focus"));
+      m_previewContentCombo->addItem(tr("Solid White"));
+      m_previewContentCombo->addItem(tr("Solid 50% Gray"));
+      m_previewContentCombo->addItem(tr("Solid Red"));
+      m_previewContentCombo->addItem(tr("Solid Green"));
+      m_previewContentCombo->addItem(tr("Solid Blue"));
       m_previewContentCombo->setCurrentIndex(s_lastPreviewContent);
       globalLayout->addRow(tr("Preview"), m_previewContentCombo);
 
@@ -138,6 +145,22 @@ WindowSettingsWidget::WindowSettingsWidget(QWidget* parent)
       connect(borderCheck, &QCheckBox::toggled, this, [this](bool checked) {
         m_canvas->setLockToBorderEnabled(checked);
       });
+
+      auto* meshColumns = new QSpinBox;
+      auto* meshRows = new QSpinBox;
+      meshColumns->setRange(2, 17); meshColumns->setValue(5);
+      meshRows->setRange(2, 17); meshRows->setValue(5);
+      globalLayout->addRow(tr("Mesh columns"), meshColumns);
+      globalLayout->addRow(tr("Mesh rows"), meshRows);
+      auto* meshButton = new QPushButton(tr("Create / Reset Mesh"));
+      meshButton->setToolTip(tr("Replace the selected output's mesh with a regular grid based on its corner warp. Double-click the output to edit points; Ctrl-drag for fine adjustment."));
+      globalLayout->addRow(meshButton);
+      connect(meshButton, &QPushButton::clicked, this, [this, meshColumns, meshRows] {
+        m_canvas->setMeshResolution(meshColumns->value(), meshRows->value());
+      });
+      auto* cornersButton = new QPushButton(tr("Use Four Corners"));
+      globalLayout->addRow(cornersButton);
+      connect(cornersButton, &QPushButton::clicked, this, [this] { m_canvas->setMeshResolution(0, 0); });
 
       auto* resetWarpBtn = new QPushButton(tr("Reset Warp"));
       globalLayout->addRow(resetWarpBtn);
@@ -173,6 +196,8 @@ WindowSettingsWidget::WindowSettingsWidget(QWidget* parent)
       auto* addRemoveLayout = new QHBoxLayout;
       auto* addBtn = new QPushButton(tr("Add"));
       auto* removeBtn = new QPushButton(tr("Remove"));
+      addBtn->setEnabled(!m_live);
+      removeBtn->setEnabled(!m_live);
       addRemoveLayout->addWidget(addBtn);
       addRemoveLayout->addWidget(removeBtn);
       outputsLayout->addLayout(addRemoveLayout);
@@ -359,6 +384,27 @@ WindowSettingsWidget::WindowSettingsWidget(QWidget* parent)
       makeBlendRow(tr("Right"), m_blendRightW, m_blendRightG);
       makeBlendRow(tr("Top"), m_blendTopW, m_blendTopG);
       makeBlendRow(tr("Bottom"), m_blendBottomW, m_blendBottomG);
+
+      auto* autoBlend = new QPushButton(tr("Calculate Blends from Overlap"));
+      autoBlend->setToolTip(tr("Set all edge widths from source-region overlaps. Existing gamma values are retained."));
+      blendLayout->addRow(autoBlend);
+      connect(autoBlend, &QPushButton::clicked, this, [this] {
+        m_canvas->autoBlendOverlaps();
+        updatePropertiesFromSelection();
+        syncPreview(false);
+      });
+      const QString labels[] = {tr("Red gain"), tr("Green gain"), tr("Blue gain"), tr("Output gamma"), tr("Black level")};
+      for(int i = 0; i < 5; ++i)
+      {
+        auto* spin = m_calibration[i] = new QDoubleSpinBox;
+        spin->setRange(i == 3 ? .1 : 0., i == 4 ? .25 : (i == 3 ? 4. : 2.));
+        spin->setDecimals(3); spin->setSingleStep(.01); spin->setValue(i == 4 ? 0. : 1.);
+        blendLayout->addRow(labels[i], spin);
+        connect(spin, qOverload<double>(&QDoubleSpinBox::valueChanged), this, [this] {
+          applyPropertiesToSelection(); syncPreview(false);
+        });
+      }
+      m_calibration[4]->setToolTip(tr("Raise the dark floor outside the blended edges to match projector black leakage. Final adjustment requires the projectors."));
 
       section->setContentLayout(blendLayout);
       section->setExpanded(false);
@@ -626,11 +672,24 @@ WindowSettingsWidget::WindowSettingsWidget(QWidget* parent)
       m_modeCombo, qOverload<int>(&QComboBox::currentIndexChanged), this,
       &WindowSettingsWidget::onModeChanged);
 
+  m_deviceNameEdit->setEnabled(!m_live);
+  m_modeCombo->setEnabled(!m_live);
+  m_inputWidth->setEnabled(!m_live);
+  m_inputHeight->setEnabled(!m_live);
+  if(m_live)
+  {
+    const QSignalBlocker blocker(m_previewContentCombo);
+    m_previewContentCombo->addItem(tr("Live Output (current input)"));
+    m_previewContentCombo->setCurrentIndex(m_previewContentCombo->count() - 1);
+  }
+  m_previewContentCombo->setEnabled(!m_live);
+  if(m_live) m_previewContentCombo->setToolTip(tr("Live output remains visible while editing."));
   setLayout(layout);
 }
 
 WindowSettingsWidget::~WindowSettingsWidget()
 {
+  if(m_live) return;
   if(this->m_modeCombo->currentIndex() != (int)WindowMode::MultiWindow)
     return;
 
@@ -661,6 +720,7 @@ WindowSettingsWidget::~WindowSettingsWidget()
 void WindowSettingsWidget::onModeChanged(int index)
 {
   m_stack->setCurrentIndex(index);
+  if(m_live) return;
 
   if(index != (int)WindowMode::MultiWindow)
   {
@@ -763,6 +823,10 @@ void WindowSettingsWidget::updatePropertiesFromSelection()
           const QSignalBlocker b17(m_blendBottomW);
           const QSignalBlocker b18(m_blendBottomG);
 
+          const auto& c = mi->calibration;
+          const float values[] = {c.red, c.green, c.blue, c.gamma, c.blackLevel};
+          for(int i = 0; i < 5; ++i)
+          { const QSignalBlocker blocker(m_calibration[i]); m_calibration[i]->setValue(values[i]); }
           m_blendLeftW->setValue(mi->blendLeft.width);
           m_blendLeftG->setValue(mi->blendLeft.gamma);
           m_blendRightW->setValue(mi->blendRight.width);
@@ -873,6 +937,8 @@ void WindowSettingsWidget::applyPropertiesToSelection()
           }
         }
 
+        mi->calibration = {float(m_calibration[0]->value()), float(m_calibration[1]->value()),
+                           float(m_calibration[2]->value()), float(m_calibration[3]->value()), float(m_calibration[4]->value())};
         mi->blendLeft = {(float)m_blendLeftW->value(), (float)m_blendLeftG->value()};
         mi->blendRight = {(float)m_blendRightW->value(), (float)m_blendRightG->value()};
         mi->blendTop = {(float)m_blendTopW->value(), (float)m_blendTopG->value()};
@@ -1073,6 +1139,8 @@ void WindowSettingsWidget::selectOutput(int index)
 
 void WindowSettingsWidget::syncPreview(bool syncPositions)
 {
+  if(m_live && m_canvas && onLiveMappingsChanged)
+    onLiveMappingsChanged(m_canvas->getMappings());
   if(m_preview && m_canvas)
   {
     m_preview->setSyncPositions(syncPositions);

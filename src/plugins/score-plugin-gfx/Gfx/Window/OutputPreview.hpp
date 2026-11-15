@@ -16,7 +16,13 @@ enum class PreviewContent
   Black,
   PerOutputTestCard,
   GlobalTestCard,
-  OutputIdentification
+  OutputIdentification,
+  GlobalText,
+  White,
+  Gray,
+  Red,
+  Green,
+  Blue
 };
 
 class PreviewWidget;
@@ -54,6 +60,8 @@ public:
   void setOutputResolution(QSize sz);
   void setBlend(EdgeBlend left, EdgeBlend right, EdgeBlend top, EdgeBlend bottom);
   void setSourceRect(QRectF rect);
+  void setCalibration(const OutputCalibration& calibration);
+  void setMeshWarp(const MeshWarp& mesh);
   void setCornerWarp(const CornerWarp& warp);
   void setTransform(int rotation, bool mirrorX, bool mirrorY);
   void setGlobalTestCard(const QImage& img);
@@ -66,6 +74,9 @@ protected:
   void mouseDoubleClickEvent(QMouseEvent* event) override;
 
 private:
+  void paintContent(QPainter& p, bool transform = true, bool calibrate = true);
+  MeshWarp m_meshWarp;
+  OutputCalibration m_calibration;
   int m_index{};
   PreviewContent m_content{PreviewContent::Black};
   QSize m_resolution{1280, 720};
