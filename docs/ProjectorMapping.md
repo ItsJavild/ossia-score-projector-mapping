@@ -1,6 +1,7 @@
 # Projector mapping build
 
-Based on ossia Score 3.9.0. This fork extends the existing Window device's
+Based on ossia Score 3.9.0, with add-on revisions locked to the official 3.9.0
+Windows release manifest. This fork extends the existing Window device's
 Multi-Window Mapping interface for overlapping projector outputs.
 
 ## Calibration patterns

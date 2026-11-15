@@ -55,6 +55,10 @@ jobs:
           Copy-Item LICENSE.txt usb-package/LICENSE.txt
           Get-FileHash usb-package/*.exe -Algorithm SHA256 | Format-List | Out-File usb-package/SHA256.txt
           git rev-parse HEAD | Out-File usb-package/SOURCE-COMMIT.txt
+          Get-ChildItem src/addons -Directory | Where-Object { Test-Path (Join-Path $_.FullName '.git') } | ForEach-Object {
+            $addonPath = $_.FullName
+            "$($_.Name) $(git -C $addonPath rev-parse HEAD)"
+          } | Out-File usb-package/ADDON-VERSIONS.txt
       - uses: actions/upload-artifact@v7
         with:
           name: Ossia-Score-Projector-Mapping-Windows-x64-USB
