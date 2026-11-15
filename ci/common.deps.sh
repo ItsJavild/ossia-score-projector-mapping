@@ -169,7 +169,8 @@ verify_addons() {
 }
 
 clone_addon https://github.com/ossia/iscore-addon-network
-clone_addon https://github.com/ossia/score-addon-synthimi
+# Match the Avendish API shipped with Score 3.9.0.
+clone_addon https://github.com/ossia/score-addon-synthimi e85b4f2772e4d9e70b6a1c6d0eb75d1f5bdfa5ca
 clone_addon https://github.com/ossia/score-addon-jk
 clone_addon https://github.com/ossia/GBAP
 clone_addon https://github.com/ossia/score-addon-ltc

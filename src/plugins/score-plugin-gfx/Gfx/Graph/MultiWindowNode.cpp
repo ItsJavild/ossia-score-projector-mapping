@@ -274,7 +274,12 @@ public:
               alpha *= pow(clamp(tc.y / blendWidths.w, 0.0, 1.0), blendGammas.w);
 
           alpha = clamp(alpha, 0.0, 1.0);
-          vec3 corrected = pow(max(fragColor.rgb, vec3(0.0)), vec3(1.0 / colorGain.w)) * colorGain.rgb;
+          // Neutral calibration must preserve the original HDR values, including
+          // negative extended-linear components, and avoid an unnecessary pow().
+          vec3 corrected = fragColor.rgb;
+          if(colorGain.w != 1.0)
+              corrected = pow(max(corrected, vec3(0.0)), vec3(1.0 / colorGain.w));
+          corrected *= colorGain.rgb;
           corrected = corrected * alpha + blackFloor.x * alpha * (vec3(1.0) - clamp(corrected, 0.0, 1.0));
           fragColor = vec4(corrected, alpha);
       }

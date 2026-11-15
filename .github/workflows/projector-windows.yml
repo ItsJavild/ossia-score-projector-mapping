@@ -13,6 +13,8 @@ jobs:
     needs: mapping-checks
     runs-on: windows-latest
     timeout-minutes: 180
+    env:
+      SCCACHE_GHA_ENABLED: "true"
     steps:
       - name: Enable long paths
         run: git config --global core.longpaths true
@@ -28,10 +30,12 @@ jobs:
       - name: Install build dependencies and NDI add-on
         shell: bash
         run: ./ci/win32.deps.sh
+      - name: Enable compiler cache
+        uses: mozilla-actions/sccache-action@v0.0.11
       - name: Build application and installer
         shell: bash
         env:
-          SCORE_EXTRA_CMAKE_ARGS: -DKFR_ARCH=generic
+          SCORE_EXTRA_CMAKE_ARGS: -DKFR_ARCH=generic -DCMAKE_C_COMPILER_LAUNCHER=sccache -DCMAKE_CXX_COMPILER_LAUNCHER=sccache
         run: ./ci/win32.build.sh
       - name: Check mapping serialization
         shell: bash

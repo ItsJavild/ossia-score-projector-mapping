@@ -105,6 +105,10 @@ python3 tests/projector-mapping/check_shader.py /path/to/qsb
 ```
 
 The Qt-only checks can run independently of Score's third-party submodules.
+They require Qt Widgets, Test, and Shader Tools on Windows and macOS. The pixel
+checks compile the production shaders directly and verify mesh coverage, RGB
+calibration, and preservation of negative and above-white HDR values. Windows
+uses the D3D11 software renderer for these checks; macOS uses Metal.
 Full mapping JSON/binary compatibility checks are in
 `test_unit_output_mapping_serialization` when configured with
 `-DSCORE_TESTING=ON`.
