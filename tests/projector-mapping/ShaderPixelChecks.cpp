@@ -7,10 +7,14 @@
 #include <QMatrix4x4>
 #include <QtCore/qfloat16.h>
 #include <private/qrhi_p.h>
+#if QT_VERSION >= QT_VERSION_CHECK(6, 6, 0)
+#include <rhi/qrhi_platform.h>
+#else
 #if defined(__APPLE__)
 #include <private/qrhimetal_p.h>
 #elif defined(_WIN32)
 #include <private/qrhid3d11_p.h>
+#endif
 #endif
 #if __has_include(<QtShaderTools/rhi/qshaderbaker.h>)
 #include <QtShaderTools/rhi/qshaderbaker.h>

@@ -21,6 +21,9 @@ jobs:
       - uses: actions/checkout@v6
         with:
           submodules: recursive
+      - name: Check RHI test portability
+        shell: bash
+        run: cmake -P ci/projector-test-preflight.cmake
       - name: Prepare Vulkan SDK
         uses: humbletim/setup-vulkan-sdk@v1.2.1
         with:
