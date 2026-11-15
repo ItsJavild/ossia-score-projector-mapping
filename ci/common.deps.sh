@@ -199,7 +199,9 @@ then
   clone_addon https://github.com/ossia/score-addon-sysinfo
   clone_addon https://github.com/ossia/score-addon-trackingprotocols
   clone_addon https://github.com/ossia/score-addon-videoio
-  clone_addon https://github.com/sat-mtl/carto-tcp-avendish.git update-avendish-packaging
+  # The branch tip b163900 contains unresolved CMake merge markers. Keep the
+  # preceding Score-compatible revision so deployment remains reproducible.
+  clone_addon https://github.com/sat-mtl/carto-tcp-avendish.git 89eaf61a15bd7e345a233edc419f2086ab5382c9
   NO_SUBMODULES=1 clone_addon https://github.com/ossia/score-addon-orbbec
 fi
 
