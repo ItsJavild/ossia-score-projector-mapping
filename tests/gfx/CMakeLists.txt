@@ -1003,6 +1003,7 @@ score_add_test(test_gfx_images_render
 # into the test target, as test_gfx_engine_glue does for the render nodes.
 score_plugin_hidden_sources(_window_layout_hidden
     "${_gfx_src}/Gfx/Window/OutputMapping.cpp"
+    "${_gfx_src}/Gfx/Window/OutputMappingCanvas.cpp"
     "${_gfx_src}/Gfx/Window/DesktopLayout.cpp"
     "${_gfx_src}/Gfx/Window/TestCard.cpp")
 score_add_test(test_gfx_window_layout
@@ -1075,6 +1076,7 @@ score_add_test(test_gfx_output_preview
 score_plugin_hidden_sources(_window_settings_hidden
     "${_gfx_src}/Gfx/Window/WindowSettingsWidget.cpp"
     "${_gfx_src}/Gfx/Window/OutputMapping.cpp"
+    "${_gfx_src}/Gfx/Window/OutputMappingCanvas.cpp"
     "${_gfx_src}/Gfx/Window/DesktopLayout.cpp"
     "${_gfx_src}/Gfx/Window/OutputPreview.cpp"
     "${_gfx_src}/Gfx/Window/TestCard.cpp")

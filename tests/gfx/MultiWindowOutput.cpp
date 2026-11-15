@@ -427,3 +427,48 @@ TEST_CASE("MultiWindowNode with no mappings does nothing", "[gfx][window][multiw
   CHECK_FALSE(hasState);
   CHECK(windows == 0);
 }
+
+TEST_CASE("MultiWindowNode updates mesh and calibration while the same graph renders",
+          "[gfx][window][multiwindow][live]")
+{
+  const auto api = GENERATE(from_range(platform_backends()));
+  Outcome outcome;
+  bool preservedWindows{}, preservedTarget{}, appliedMesh{}, restored{};
+  run_in_gui_app([&](const score::GUIApplicationContext&) {
+    MultiWindowRig rig;
+    auto mappings = two_up();
+    if(!rig.build(api, mappings))
+    {
+      outcome = {rig.skipped(), rig.skipReason(), rig.error(), rig.backend()};
+      return;
+    }
+    outcome.backend = rig.backend();
+    rig.render(3);
+    const auto* window = rig.node->windowOutputs()[0].window.get();
+    const auto* target = rig.node->offscreenTarget().texture;
+    mappings[0].meshWarp.reset(7, 5, {});
+    mappings[0].meshWarp.points[17] += QPointF(.02, .02);
+    mappings[0].calibration = {.8f, .9f, 1.f, 1.1f, .01f};
+    mappings[0].blendRight = {.15f, 1.5f};
+    rig.node->updateMappings(mappings);
+    rig.render(5);
+    const auto& output = rig.node->windowOutputs()[0];
+    preservedWindows = output.window.get() == window;
+    preservedTarget = rig.node->offscreenTarget().texture == target;
+    appliedMesh = output.meshWarp.points == mappings[0].meshWarp.points
+                  && output.calibration.red == .8f;
+    // Cancel / undo restores calibration without replacing either output resource.
+    rig.node->updateMappings(two_up());
+    rig.render(3);
+    restored = !rig.node->windowOutputs()[0].meshWarp.enabled()
+               && rig.node->windowOutputs()[0].calibration.isIdentity()
+               && rig.node->windowOutputs()[0].window.get() == window;
+  });
+  if(outcome.skipped) SKIP(outcome.backend << ": " << outcome.skipReason);
+  INFO("backend: " << outcome.backend);
+  REQUIRE(outcome.error.empty());
+  CHECK(preservedWindows);
+  CHECK(preservedTarget);
+  CHECK(appliedMesh);
+  CHECK(restored);
+}
