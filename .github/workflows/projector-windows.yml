@@ -31,13 +31,13 @@ jobs:
       - name: Build application and installer
         shell: bash
         env:
-          SCORE_EXTRA_CMAKE_ARGS: -DSCORE_TESTING=ON -DKFR_ARCH=generic
-          SCORE_BUILD_TARGET: score
+          SCORE_EXTRA_CMAKE_ARGS: -DKFR_ARCH=generic
         run: ./ci/win32.build.sh
       - name: Check mapping serialization
         shell: bash
         run: |
           export PATH="/c/ossia-sdk-x86_64/llvm/bin:/c/ossia-sdk-x86_64/cmake/bin:$PATH"
+          cmake -S . -B build -DSCORE_TESTING=ON
           cmake --build build --target test_unit_output_mapping_serialization test_unit_device_inplace_settings
           ctest --test-dir build -R "output_mapping_serialization|device_inplace_settings" --output-on-failure --no-tests=error
       - name: Prepare USB package

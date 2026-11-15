@@ -47,7 +47,7 @@ cmake -GNinja -S "$PWD" -B build \
   -DCMAKE_CXX_FLAGS="-g0" \
   $SCORE_EXTRA_CMAKE_ARGS
 date
-cmake --build build --target "${SCORE_BUILD_TARGET:-all}"
+cmake --build build
 date
 
 cmake --build build --target package
