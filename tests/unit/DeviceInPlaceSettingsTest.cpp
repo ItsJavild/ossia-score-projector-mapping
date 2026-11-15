@@ -10,6 +10,7 @@ class InPlaceSettingsDevice final : public Device::OwningDeviceInterface
 {
   W_OBJECT(InPlaceSettingsDevice)
 public:
+  using OwningDeviceInterface::getDevice;
   explicit InPlaceSettingsDevice(Device::DeviceSettings settings)
       : OwningDeviceInterface{std::move(settings)}
   {
