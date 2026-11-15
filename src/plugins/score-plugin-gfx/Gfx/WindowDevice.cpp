@@ -161,8 +161,8 @@ void WindowDevice::applyLiveMappings(const std::vector<OutputMapping>& mappings)
   if(!device) return;
   auto* node = device->node();
   const auto& outputs = node->windowOutputs();
-  if(outputs.size() != mappings.size()) return;
   node->updateMappings(mappings);
+  if(outputs.size() != mappings.size()) return;
   for(int i = 0; i < int(mappings.size()); ++i)
   {
     const auto& m = mappings[i];

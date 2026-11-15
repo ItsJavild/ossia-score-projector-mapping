@@ -661,8 +661,11 @@ void MultiWindowNode::setRenderSize(QSize sz)
 
 void MultiWindowNode::updateMappings(const std::vector<Gfx::OutputMapping>& mappings)
 {
-  if(mappings.size() != m_windowOutputs.size()) return;
+  if(mappings.size() != m_mappings.size()) return;
+  // The device can exist before its first rendered frame, or while stopped.
+  // Keep edits for createOutput() even when there are no current windows.
   m_mappings = mappings;
+  if(mappings.size() != m_windowOutputs.size()) return;
   for(int i = 0; i < int(mappings.size()); ++i)
   {
     const auto& m = mappings[i];

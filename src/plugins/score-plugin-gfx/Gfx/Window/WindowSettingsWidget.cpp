@@ -674,6 +674,8 @@ WindowSettingsWidget::WindowSettingsWidget(QWidget* parent, bool live)
 
   m_deviceNameEdit->setEnabled(!m_live);
   m_modeCombo->setEnabled(!m_live);
+  m_flagCombo->setEnabled(!m_live);
+  m_formatCombo->setEnabled(!m_live);
   m_inputWidth->setEnabled(!m_live);
   m_inputHeight->setEnabled(!m_live);
   if(m_live)

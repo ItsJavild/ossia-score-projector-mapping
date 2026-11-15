@@ -472,3 +472,29 @@ TEST_CASE("MultiWindowNode updates mesh and calibration while the same graph ren
   CHECK(appliedMesh);
   CHECK(restored);
 }
+
+TEST_CASE("MultiWindowNode retains edits made before the first output frame",
+          "[gfx][window][multiwindow][live]")
+{
+  const auto api = GENERATE(from_range(platform_backends()));
+  bool applied{};
+  bool skipped{};
+  run_in_gui_app([&](const score::GUIApplicationContext&) {
+    std::string backend;
+    if(!can_present() || api == score::gfx::Null || !probe_api(api, backend))
+    { skipped = true; return; }
+    auto mappings = two_up();
+    score::gfx::MultiWindowNode node{
+        {.manualRenderingRate = 1000. / 60., .supportsVSync = false}, mappings};
+    mappings[0].meshWarp.reset(5, 5, {});
+    mappings[0].calibration.red = .75f;
+    node.updateMappings(mappings);
+    node.createOutput({.graphicsApi = api});
+    const auto& outputs = node.windowOutputs();
+    applied = outputs.size() == 2 && outputs[0].meshWarp.enabled()
+              && outputs[0].calibration.red == .75f;
+    node.destroyOutput();
+  });
+  if(skipped) SKIP("No presenting graphics backend");
+  CHECK(applied);
+}
