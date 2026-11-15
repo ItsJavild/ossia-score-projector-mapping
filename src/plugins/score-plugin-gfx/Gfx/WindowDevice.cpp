@@ -172,7 +172,14 @@ void WindowDevice::applyLiveMappings(const std::vector<OutputMapping>& mappings)
       if(m.screenIndex >= 0 && m.screenIndex < screens.size() && w->screen() != screens[m.screenIndex])
         w->setScreen(screens[m.screenIndex]);
       if(m.fullscreen)
-      { if(w->visibility() != QWindow::FullScreen) w->showFullScreen(); }
+      {
+        // As in the calibration previews, Windows needs the window placed on
+        // the chosen monitor before entering (or moving) fullscreen.
+        if(m.screenIndex >= 0 && m.screenIndex < screens.size()
+           && w->geometry() != screens[m.screenIndex]->geometry())
+          w->setGeometry(screens[m.screenIndex]->geometry());
+        if(w->visibility() != QWindow::FullScreen) w->showFullScreen();
+      }
       else
       {
         if(w->visibility() == QWindow::FullScreen) w->showNormal();

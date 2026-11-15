@@ -52,6 +52,12 @@ single four-corner transform.
 
 ## Edit a running NDI output
 
+The NDI add-on uses a separately installed NDI runtime. Keep the runtime from
+your existing working setup installed; it is not bundled with this Score
+installer. On Windows, the add-on checks the NDI runtime environment variables
+and then the normal DLL search path. This preserves the existing arrangement
+used by upstream Score.
+
 Start the existing score and NDI input normally. In the device explorer,
 right-click the multi-window Window device and choose Edit Live Mapping….
 The familiar mapping editor opens while the existing render node, input, and
