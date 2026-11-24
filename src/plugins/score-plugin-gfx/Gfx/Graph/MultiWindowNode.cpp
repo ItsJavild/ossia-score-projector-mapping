@@ -531,15 +531,9 @@ private:
     if(pw.samplers[0].texture != texture)
     {
       pw.samplers[0].texture = texture;
-      QRhiShaderResourceBinding extra[] = {
-        QRhiShaderResourceBinding::uniformBuffer(4, QRhiShaderResourceBinding::FragmentStage, pw.blendUBO),
-        QRhiShaderResourceBinding::uniformBuffer(5, QRhiShaderResourceBinding::FragmentStage, pw.warpUBO),
-        QRhiShaderResourceBinding::uniformBuffer(6, QRhiShaderResourceBinding::FragmentStage, pw.calibrationUBO)};
-      // Same binding layout; retain the pipeline and swapchain. Retire the old
-      // SRB only after frames already referencing it have finished.
-      pw.pipeline.srb->deleteLater();
-      pw.pipeline.srb = score::gfx::createDefaultBindings(
-          renderer, {}, nullptr, pw.uvRectUBO, pw.samplers, extra, 3);
+      // This is a resource update within the same layout: preserve the SRB
+      // object referenced by the pipeline as well as the native descriptor set.
+      score::gfx::replaceTexture(*pw.pipeline.srb, 3, texture);
     }
     if(content == Gfx::PreviewContent::LiveInput && pw.patternTexture)
     {
