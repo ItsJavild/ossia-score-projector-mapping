@@ -75,6 +75,8 @@ public:
   ossia::net::device_base* getDevice() const override { return m_dev.get(); }
   bool applySettingsInPlace(const Device::DeviceSettings&);
   W_INVOKABLE(applySettingsInPlace)
+  bool canEditSettingsInPlace() const;
+  W_INVOKABLE(canEditSettingsInPlace)
   bool editSettingsInPlace();
   W_INVOKABLE(editSettingsInPlace)
   void applyLiveMappings(const std::vector<OutputMapping>&);

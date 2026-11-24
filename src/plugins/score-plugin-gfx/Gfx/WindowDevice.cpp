@@ -1,5 +1,6 @@
 #include "WindowDevice.hpp"
 #include <Gfx/Graph/ScreenNode.hpp>
+#include <Execution/DocumentPlugin.hpp>
 
 #include <QCoreApplication>
 #include <QElapsedTimer>
@@ -128,12 +129,18 @@ void WindowDevice::setupContextMenu(QMenu& menu) const
   }
 }
 
+bool WindowDevice::canEditSettingsInPlace() const
+{
+  return dynamic_cast<multiwindow_device*>(m_dev.get()) != nullptr;
+}
+
 bool WindowDevice::editSettingsInPlace()
 {
   auto* device = dynamic_cast<multiwindow_device*>(m_dev.get());
   if(!device) return false;
   auto* node = device->node();
-  const bool live = node->renderer() != nullptr;
+  const auto* execution = m_ctx.findPlugin<Execution::DocumentPlugin>();
+  const bool live = node->renderer() != nullptr || (execution && execution->isPlaying());
   const auto original = m_settings.deviceSpecificSettings.value<WindowSettings>().outputs;
   QPointer<WindowDevice> guard{this};
   QDialog dialog;

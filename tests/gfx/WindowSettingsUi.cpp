@@ -23,6 +23,11 @@
 #include <Explorer/DocumentPlugin/DeviceDocumentPlugin.hpp>
 #include <score/command/Dispatchers/CommandDispatcher.hpp>
 #include <QDialog>
+#include <QAction>
+#include <Device/Protocol/ProtocolList.hpp>
+#include <Explorer/Explorer/DeviceExplorerModel.hpp>
+#include <Explorer/Explorer/DeviceExplorerWidget.hpp>
+#include <Explorer/Explorer/DeviceExplorerView.hpp>
 #include <QTimer>
 
 #include <QApplication>
@@ -757,6 +762,43 @@ TEST_CASE("Live mapping editor retains the registered device and enables pattern
     }
     CHECK(deviceChanges == 0);
     CHECK(device->getDevice() == original);
+    // Exercise the ordinary Edit action with the playback restriction set,
+    // not just the optional device hook. Other editing remains blocked.
+    {
+      Explorer::DeviceExplorerModel model{plug, nullptr};
+      Explorer::DeviceExplorerWidget explorer{ctx.interfaces<Device::ProtocolFactoryList>(), nullptr};
+      explorer.setModel(&model);
+      QModelIndex deviceIndex;
+      for(int row = 0; row < model.rowCount({}); ++row)
+      {
+        const auto index = model.index(row, 0, {});
+        const auto& item = model.nodeFromModelIndex(index);
+        if(const auto* set = item.target<Device::DeviceSettings>(); set && set->name == settings.name)
+          deviceIndex = index;
+      }
+      REQUIRE(deviceIndex.isValid());
+      explorer.view()->setCurrentIndex(explorer.proxyIndex(deviceIndex));
+      explorer.setEditable(false);
+      QAction* edit = nullptr;
+      for(auto* action : explorer.findChildren<QAction*>())
+        if(action->text() == "Edit") edit = action;
+      REQUIRE(edit);
+      CHECK(edit->isEnabled());
+      bool opened = false;
+      QTimer closeDialog;
+      closeDialog.setSingleShot(true);
+      QObject::connect(&closeDialog, &QTimer::timeout, &explorer, [&] {
+        if(auto* dialog = qobject_cast<QDialog*>(QApplication::activeModalWidget()))
+        { opened = true; dialog->reject(); }
+      });
+      closeDialog.start(0);
+      edit->trigger();
+      closeDialog.stop();
+      CHECK(opened);
+      CHECK(deviceChanges == 0);
+      CHECK(device->getDevice() == original);
+      explorer.setModel(nullptr);
+    }
     // The same optional Qt entry point used by ordinary Edit Device. Both
     // accepting and cancelling must keep an unchanged connected device alive.
     for(bool accept : {false, true})

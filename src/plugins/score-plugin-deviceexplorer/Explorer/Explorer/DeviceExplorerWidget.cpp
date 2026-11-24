@@ -101,6 +101,14 @@
 W_OBJECT_IMPL(Explorer::DeviceExplorerWidget)
 namespace Explorer
 {
+// A protocol may offer an editor that never rebuilds its running device.
+static bool canEditSettingsInPlace(Device::DeviceInterface& device)
+{
+  const int method = device.metaObject()->indexOfMethod("canEditSettingsInPlace()");
+  bool allowed = false;
+  return method >= 0 && device.metaObject()->method(method).invoke(
+      &device, Qt::DirectConnection, Q_RETURN_ARG(bool, allowed)) && allowed;
+}
 static const Device::DeviceSettings* getDevice(const Device::Node& n)
 {
   if(n.is<Device::AddressSettings>())
@@ -488,6 +496,7 @@ void DeviceExplorerWidget::setEditable(bool b)
   if(m_openMenu)
     m_openMenu->setEnabled(b);
   m_addressView->setEnabled(b);
+  updateActions();
 }
 
 QModelIndex DeviceExplorerWidget::sourceIndex(QModelIndex index) const
@@ -781,7 +790,14 @@ void DeviceExplorerWidget::updateActions()
         m_removeNodeAction->setEnabled(editable);
         m_learnAction->setEnabled(capas.canLearn && editable);
       }
-      m_editAction->setEnabled(editable);
+      bool inPlace = false;
+      if(aDeviceIsSelected)
+      {
+        const auto& selected = m->nodeFromModelIndex(m_ntView->selectedIndex());
+        if(auto* device = m->deviceModel().list().findDevice(selected.get<Device::DeviceSettings>().name))
+          inPlace = canEditSettingsInPlace(*device);
+      }
+      m_editAction->setEnabled(editable || inPlace);
     }
     else if(selection.size() > 1)
     {
@@ -869,9 +885,7 @@ DeviceExplorerFilterProxyModel* DeviceExplorerWidget::proxyModel()
 
 void DeviceExplorerWidget::edit()
 {
-  if(!editable())
-    return;
-
+  if(!model()) return;
   const auto& select = model()->nodeFromModelIndex(m_ntView->selectedIndex());
   if(select.is<Device::DeviceSettings>())
   {
@@ -879,7 +893,7 @@ void DeviceExplorerWidget::edit()
     // avoids coupling the explorer to the graphics plugin or changing vtables.
     auto& device = model()->deviceModel().list().device(select.get<Device::DeviceSettings>().name);
     const int method = device.metaObject()->indexOfMethod("editSettingsInPlace()");
-    if(method >= 0)
+    if(method >= 0 && canEditSettingsInPlace(device))
     {
       bool handled = false;
       if(device.metaObject()->method(method).invoke(&device, Qt::DirectConnection,
@@ -889,6 +903,7 @@ void DeviceExplorerWidget::edit()
         return;
       }
     }
+    if(!editable()) return;
     if(!m_deviceDialog)
     {
       m_deviceDialog = new DeviceEditDialog{
@@ -937,6 +952,7 @@ void DeviceExplorerWidget::edit()
   }
   else
   {
+    if(!editable()) return;
     auto before = select.get<Device::AddressSettings>();
 
     if(!model())
