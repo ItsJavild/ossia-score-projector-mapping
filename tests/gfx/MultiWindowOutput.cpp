@@ -527,10 +527,10 @@ TEST_CASE("MultiWindowNode switches patterns without rebuilding live output reso
                      Gfx::PreviewContent::LiveInput, Gfx::PreviewContent::GlobalTestCard,
                      Gfx::PreviewContent::LiveInput})
     {
-      const auto before = rig.fpsCount;
+      const auto before = rig.src->standardUBO.frameIndex;
       rig.node->setPreviewContent(mode);
       rig.render(4);
-      if(rig.fpsCount > before) ++modesRendered;
+      if(rig.src->standardUBO.frameIndex > before) ++modesRendered;
       const auto& output = rig.node->windowOutputs()[0];
       stable = stable && rig.node->previewContent() == mode
           && rig.node->renderer() == renderer && rig.node->offscreenTarget().texture == target
