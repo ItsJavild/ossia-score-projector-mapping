@@ -498,3 +498,48 @@ TEST_CASE("MultiWindowNode retains edits made before the first output frame",
   if(skipped) SKIP("No presenting graphics backend");
   CHECK(applied);
 }
+
+TEST_CASE("MultiWindowNode switches patterns without rebuilding live output resources",
+          "[gfx][window][multiwindow][live][projector-live]")
+{
+  const auto api = GENERATE(from_range(platform_backends()));
+  Outcome outcome;
+  bool stable = true;
+  int modesRendered = 0;
+  run_in_gui_app([&](const score::GUIApplicationContext&) {
+    MultiWindowRig rig;
+    if(!rig.build(api, two_up()))
+    {
+      outcome = {rig.skipped(), rig.skipReason(), rig.error(), rig.backend()};
+      return;
+    }
+    rig.render(3);
+    const auto* target = rig.node->offscreenTarget().texture;
+    const auto* renderer = rig.node->renderer();
+    const auto* window = rig.node->windowOutputs()[0].window.get();
+    const auto* swapChain = rig.node->windowOutputs()[0].swapChain;
+    auto mappings = two_up();
+    mappings[0].meshWarp.reset(5, 5, {});
+    mappings[0].blendRight = {.15f, 1.5f};
+    rig.node->updateMappings(mappings);
+    for(auto mode : {Gfx::PreviewContent::White, Gfx::PreviewContent::GlobalText,
+                     Gfx::PreviewContent::OutputIdentification, Gfx::PreviewContent::Red,
+                     Gfx::PreviewContent::LiveInput, Gfx::PreviewContent::GlobalTestCard,
+                     Gfx::PreviewContent::LiveInput})
+    {
+      const auto before = rig.fpsCount;
+      rig.node->setPreviewContent(mode);
+      rig.render(4);
+      if(rig.fpsCount > before) ++modesRendered;
+      const auto& output = rig.node->windowOutputs()[0];
+      stable = stable && rig.node->previewContent() == mode
+          && rig.node->renderer() == renderer && rig.node->offscreenTarget().texture == target
+          && output.window.get() == window && output.swapChain == swapChain
+          && output.meshWarp.points == mappings[0].meshWarp.points;
+    }
+  });
+  if(outcome.skipped) SKIP(outcome.backend << ": " << outcome.skipReason);
+  REQUIRE(outcome.error.empty());
+  CHECK(stable);
+  CHECK(modesRendered == 7);
+}

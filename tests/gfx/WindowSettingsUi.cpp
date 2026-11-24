@@ -717,6 +717,7 @@ TEST_CASE("Live mapping editor retains the registered device and enables pattern
     ws.outputs = {mapping({0, 0, 1, 1}, {20, 40}, {192, 144})};
     auto settings = makeSettings(ws);
     settings.name = "projector-live-regression";
+    settings.protocol = WindowProtocolFactory::static_concreteKey();
     CommandDispatcher<> disp{doc->context().commandStack};
     disp.submit(new Explorer::Command::LoadDevice{plug, settings});
     auto* device = dynamic_cast<WindowDevice*>(plug.list().findDevice(settings.name));

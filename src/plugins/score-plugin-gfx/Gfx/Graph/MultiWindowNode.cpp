@@ -541,6 +541,13 @@ private:
       pw.pipeline.srb = score::gfx::createDefaultBindings(
           renderer, {}, nullptr, pw.uvRectUBO, pw.samplers, extra, 3);
     }
+    if(content == Gfx::PreviewContent::LiveInput && pw.patternTexture)
+    {
+      pw.patternTexture->deleteLater();
+      pw.patternTexture = nullptr;
+      pw.patternContent = Gfx::PreviewContent::LiveInput;
+      pw.patternSize = {};
+    }
     return true;
   }
 
