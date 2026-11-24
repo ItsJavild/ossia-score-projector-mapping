@@ -45,8 +45,8 @@ jobs:
         run: |
           export PATH="/c/ossia-sdk-x86_64/llvm/bin:/c/ossia-sdk-x86_64/cmake/bin:$PATH"
           cmake -S . -B build -DSCORE_TESTING=ON
-          cmake --build build --target test_unit_output_mapping_serialization test_unit_device_inplace_settings test_gfx_multi_window
-          ctest --test-dir build -R "output_mapping_serialization|device_inplace_settings|gfx_multi_window" --output-on-failure --no-tests=error
+          cmake --build build --target test_unit_output_mapping_serialization test_unit_device_inplace_settings test_gfx_multi_window test_gfx_window_settings_ui
+          ctest --test-dir build -R "output_mapping_serialization|device_inplace_settings|gfx_multi_window|gfx_window_settings_ui" --output-on-failure --no-tests=error
       - name: Prepare USB package
         shell: pwsh
         run: |

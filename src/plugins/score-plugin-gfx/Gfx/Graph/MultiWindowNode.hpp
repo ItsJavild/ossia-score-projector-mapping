@@ -2,6 +2,7 @@
 #include <Gfx/Graph/OutputNode.hpp>
 #include <Gfx/Graph/Utils.hpp>
 #include <Gfx/WindowDevice.hpp>
+#include <Gfx/Window/TestCard.hpp>
 
 namespace score::gfx
 {
@@ -71,6 +72,8 @@ struct SCORE_PLUGIN_GFX_EXPORT MultiWindowNode : OutputNode
     return m_offscreenTarget;
   }
 
+  void setPreviewContent(Gfx::PreviewContent content) { m_previewContent = content; }
+  Gfx::PreviewContent previewContent() const { return m_previewContent; }
   void updateMappings(const std::vector<Gfx::OutputMapping>& mappings);
   void setRenderSize(QSize sz);
   void setSourceRect(int windowIndex, QRectF rect);
@@ -99,6 +102,7 @@ private:
   // offscreen RPD is also assigned to m_renderState->renderPassDescriptor.
   void recreateOffscreenTarget();
 
+  Gfx::PreviewContent m_previewContent{Gfx::PreviewContent::LiveInput};
   Configuration m_conf;
   std::vector<Gfx::OutputMapping> m_mappings;
   std::vector<WindowOutput> m_windowOutputs;

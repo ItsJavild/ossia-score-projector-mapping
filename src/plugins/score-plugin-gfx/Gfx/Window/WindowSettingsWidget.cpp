@@ -179,7 +179,10 @@ WindowSettingsWidget::WindowSettingsWidget(QWidget* parent, bool live)
       connect(
           m_previewContentCombo, qOverload<int>(&QComboBox::currentIndexChanged), this,
           [this](int idx) {
-        s_lastPreviewContent = idx;
+        if(!m_live) s_lastPreviewContent = idx;
+        if(m_live && onLivePreviewChanged)
+          onLivePreviewChanged(idx == m_previewContentCombo->count() - 1
+              ? PreviewContent::LiveInput : static_cast<PreviewContent>(idx));
         if(m_preview)
           m_preview->setPreviewContent(static_cast<PreviewContent>(idx));
       });
@@ -684,40 +687,12 @@ WindowSettingsWidget::WindowSettingsWidget(QWidget* parent, bool live)
     m_previewContentCombo->addItem(tr("Live Output (current input)"));
     m_previewContentCombo->setCurrentIndex(m_previewContentCombo->count() - 1);
   }
-  m_previewContentCombo->setEnabled(!m_live);
-  if(m_live) m_previewContentCombo->setToolTip(tr("Live output remains visible while editing."));
+  m_previewContentCombo->setEnabled(true);
+  if(m_live) m_previewContentCombo->setToolTip(tr("Test patterns temporarily replace the picture; live input keeps running."));
   setLayout(layout);
 }
 
-WindowSettingsWidget::~WindowSettingsWidget()
-{
-  if(m_live) return;
-  if(this->m_modeCombo->currentIndex() != (int)WindowMode::MultiWindow)
-    return;
-
-  auto doc = score::GUIAppContext().currentDocument();
-  if(!doc)
-    return;
-
-  // reconnect() destroys the device and builds a new one. While the score is
-  // playing, the execution graph holds the old one, so doing it here takes the
-  // application down -- and this runs on cancel as much as on accept, since it
-  // is a destructor. A device cannot be restructured under a running engine
-  // anyway: leave it alone and let the next start pick the settings up.
-  if(auto* exec = doc->findPlugin<Execution::DocumentPlugin>())
-    if(exec->isPlaying())
-      return;
-
-  auto& dl = doc->plugin<Explorer::DeviceDocumentPlugin>().list();
-  auto* self = dl.findDevice(this->m_deviceNameEdit->text());
-  if(!self)
-    return;
-
-  // The name is whatever was typed in the dialog, so it can name a device of
-  // another protocol entirely.
-  if(auto* win = qobject_cast<WindowDevice*>(self))
-    QMetaObject::invokeMethod(win, &WindowDevice::reconnect);
-}
+WindowSettingsWidget::~WindowSettingsWidget() = default;
 
 void WindowSettingsWidget::onModeChanged(int index)
 {
@@ -1231,19 +1206,6 @@ void WindowSettingsWidget::setSettings(const Device::DeviceSettings& settings)
     {
       m_inputWidth->setValue(set.inputWidth);
       m_inputHeight->setValue(set.inputHeight);
-    }
-
-    if(this->m_modeCombo->currentIndex() == (int)WindowMode::MultiWindow)
-    {
-      if(auto doc = score::GUIAppContext().currentDocument())
-      {
-        auto& p = doc->plugin<Explorer::DeviceDocumentPlugin>();
-        auto& dl = p.list();
-        if(auto* self = dl.findDevice(settings.name))
-        {
-          safe_cast<WindowDevice*>(self)->disconnect();
-        }
-      }
     }
 
     if(set.mode == WindowMode::MultiWindow && m_canvas)

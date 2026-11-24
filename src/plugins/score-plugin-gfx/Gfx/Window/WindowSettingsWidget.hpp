@@ -33,6 +33,7 @@ class DesktopLayoutCanvas;
 class OutputMappingCanvas;
 class OutputPreviewWindows;
 struct OutputMapping;
+enum class PreviewContent;
 
 class WindowSettingsWidget final : public Device::ProtocolSettingsWidget
 {
@@ -41,6 +42,8 @@ public:
   ~WindowSettingsWidget();
 
   std::function<void(const std::vector<OutputMapping>&)> onLiveMappingsChanged;
+
+  std::function<void(PreviewContent)> onLivePreviewChanged;
 
   Device::DeviceSettings getSettings() const override;
 

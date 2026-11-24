@@ -18,6 +18,12 @@
 #include <Gfx/WindowDevice.hpp>
 
 #include <score_test/App.hpp>
+#include <score_test/Document.hpp>
+#include <Explorer/Commands/Add/LoadDevice.hpp>
+#include <Explorer/DocumentPlugin/DeviceDocumentPlugin.hpp>
+#include <score/command/Dispatchers/CommandDispatcher.hpp>
+#include <QDialog>
+#include <QTimer>
 
 #include <QApplication>
 #include <QCheckBox>
@@ -694,5 +700,81 @@ TEST_CASE("a new output window does not land on the origin", "[gfx][window][sett
     CHECK(windowPositionForSource({0, 0}) == defaultWindowPosition);
     CHECK(windowPositionForSource({0, 40}) == QPoint{0, 40});
     CHECK(windowPositionForSource({1920, 0}) == QPoint{1920, 0});
+  });
+}
+
+// Real registered device, not the earlier widget-only test with no document.
+// Loading these settings used to disconnect it even in the live editor.
+TEST_CASE("Live mapping editor retains the registered device and enables patterns",
+          "[gfx][window][settingswidget][projector-live]")
+{
+  score::test::run_in_app([&](const score::GUIApplicationContext& ctx) {
+    auto* doc = score::test::new_document(ctx);
+    REQUIRE(doc);
+    auto& plug = doc->context().plugin<Explorer::DeviceDocumentPlugin>();
+    WindowSettings ws;
+    ws.mode = WindowMode::MultiWindow;
+    ws.outputs = {mapping({0, 0, 1, 1}, {20, 40}, {192, 144})};
+    auto settings = makeSettings(ws);
+    settings.name = "projector-live-regression";
+    CommandDispatcher<> disp{doc->context().commandStack};
+    disp.submit(new Explorer::Command::LoadDevice{plug, settings});
+    auto* device = dynamic_cast<WindowDevice*>(plug.list().findDevice(settings.name));
+    REQUIRE(device);
+    REQUIRE(device->getDevice());
+    const auto* original = device->getDevice();
+    int deviceChanges = 0;
+    QObject scope;
+    QObject::connect(device, &Device::DeviceInterface::deviceChanged, &scope,
+                     [&](auto, auto) { ++deviceChanges; });
+    {
+      WindowSettingsWidget editor{nullptr, true};
+      editor.setSettings(settings);
+      CHECK(device->getDevice() == original);
+      CHECK(deviceChanges == 0);
+      auto* preview = fieldAs<QComboBox>(editor, "Preview");
+      REQUIRE(preview);
+      CHECK(preview->isEnabled());
+      CHECK(preview->currentText().contains("Live Output"));
+      std::vector<PreviewContent> selections;
+      editor.onLivePreviewChanged = [&](PreviewContent c) { selections.push_back(c); };
+      for(const auto* name : {"Global Text / Focus", "Solid White", "Solid Red", "Black"})
+      {
+        const int index = preview->findText(name);
+        REQUIRE(index >= 0);
+        preview->setCurrentIndex(index);
+      }
+      preview->setCurrentIndex(preview->count() - 1);
+      REQUIRE(selections.size() == 5);
+      CHECK(selections[0] == PreviewContent::GlobalText);
+      CHECK(selections[1] == PreviewContent::White);
+      CHECK(selections[2] == PreviewContent::Red);
+      CHECK(selections[3] == PreviewContent::Black);
+      CHECK(selections[4] == PreviewContent::LiveInput);
+      CHECK(visiblePreviewWindows() == 0);
+      CHECK(device->getDevice() == original);
+    }
+    CHECK(deviceChanges == 0);
+    CHECK(device->getDevice() == original);
+    // The same optional Qt entry point used by ordinary Edit Device. Both
+    // accepting and cancelling must keep an unchanged connected device alive.
+    for(bool accept : {false, true})
+    {
+      bool found = false;
+      QTimer::singleShot(0, [&] {
+        if(auto* dialog = qobject_cast<QDialog*>(QApplication::activeModalWidget()))
+        {
+          found = true;
+          if(accept) dialog->accept(); else dialog->reject();
+        }
+      });
+      bool handled = false;
+      CHECK(QMetaObject::invokeMethod(device, "editSettingsInPlace", Qt::DirectConnection,
+                                     Q_RETURN_ARG(bool, handled)));
+      CHECK(handled);
+      CHECK(found);
+      CHECK(deviceChanges == 0);
+      CHECK(device->getDevice() == original);
+    }
   });
 }

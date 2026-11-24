@@ -1,5 +1,6 @@
 #pragma once
 #include <Gfx/Window/WindowSettings.hpp>
+#include <Gfx/Window/TestCard.hpp>
 
 #include <QImage>
 #include <QObject>
@@ -10,20 +11,6 @@
 
 namespace Gfx
 {
-
-enum class PreviewContent
-{
-  Black,
-  PerOutputTestCard,
-  GlobalTestCard,
-  OutputIdentification,
-  GlobalText,
-  White,
-  Gray,
-  Red,
-  Green,
-  Blue
-};
 
 class PreviewWidget;
 class OutputPreviewWindows final : public QObject

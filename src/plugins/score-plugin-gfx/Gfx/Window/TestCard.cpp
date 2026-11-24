@@ -4,6 +4,45 @@
 
 namespace Gfx
 {
+QImage renderCalibrationPattern(PreviewContent content, QSize size, int outputIndex)
+{
+  if(content == PreviewContent::LiveInput || size.isEmpty()) return {};
+  if(content == PreviewContent::GlobalText)
+    return renderTextTestCard(size.width(), size.height());
+  if(content == PreviewContent::GlobalTestCard || content == PreviewContent::PerOutputTestCard)
+    return renderTestCard(size.width(), size.height());
+  QImage image(size, QImage::Format_RGBA8888);
+  QColor color = Qt::black;
+  switch(content)
+  {
+    case PreviewContent::White: color = Qt::white; break;
+    case PreviewContent::Gray: color = QColor(128, 128, 128); break;
+    case PreviewContent::Red: color = Qt::red; break;
+    case PreviewContent::Green: color = Qt::green; break;
+    case PreviewContent::Blue: color = Qt::blue; break;
+    case PreviewContent::OutputIdentification: {
+      static const QColor colors[] = {
+        QColor(30,60,180), QColor(180,30,30), QColor(30,150,30), QColor(180,150,30),
+        QColor(150,30,150), QColor(30,150,150), QColor(200,100,30), QColor(100,30,200)};
+      color = colors[outputIndex % 8];
+      break;
+    }
+    default: break;
+  }
+  image.fill(color);
+  if(content == PreviewContent::OutputIdentification)
+  {
+    QPainter painter(&image);
+    painter.setPen(Qt::white);
+    QFont font = painter.font();
+    font.setBold(true);
+    font.setPixelSize(qMax(32, qMin(size.width(), size.height()) / 3));
+    painter.setFont(font);
+    painter.drawText(image.rect(), Qt::AlignCenter, QString::number(outputIndex));
+  }
+  return image;
+}
+
 QImage renderTextTestCard(int w, int h)
 {
   if(w < 1 || h < 1)

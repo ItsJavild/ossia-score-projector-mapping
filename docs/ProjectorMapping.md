@@ -60,7 +60,8 @@ and then the normal DLL search path. This preserves the existing arrangement
 used by upstream Score.
 
 Start the existing score and NDI input normally. In the device explorer,
-right-click the multi-window Window device and choose Edit Live Mapping….
+use Edit Device on the multi-window Window device, or right-click and choose
+Edit Live Mapping…. Both open the same editor without disconnecting the device.
 The familiar mapping editor opens while the existing render node, input, and
 output windows remain running. Changes to source regions, blends, mesh,
 color calibration, and desktop placement apply as they are edited.
@@ -70,8 +71,15 @@ settings from when the editor opened. Undo and redo of these mapping changes
 also update the existing device in place. Output count, device name, mode,
 input resolution, and graphics format remain fixed during this editor session
 because changing those requires rebuilding the device. Use the normal device
-settings while stopped for those changes. Calibration preview windows are
-suppressed in the live editor so the actual NDI-fed picture remains visible.
+settings while stopped for those changes. While the editor is open, the Preview selector switches between Live Output
+(current input) and any calibration pattern. Test patterns replace the picture
+inside the same GPU output, with the same warp, blending and color controls;
+the NDI input and scene keep running underneath. Global patterns span the shared
+canvas, while identification and per-output cards are local to each projector.
+Select Live Output to return immediately to the current frame. Closing the
+editor with either OK or Cancel always restores live input. Preview selection
+is temporary and is never saved in the scene. Separate calibration windows are
+used only when the output is stopped.
 
 ## Existing scenes
 

@@ -1085,7 +1085,7 @@ score_add_test(test_gfx_window_settings_ui
     WindowSettingsUi.cpp
     ${_window_settings_hidden}
   APP
-  PLUGINS score_plugin_gfx score_lib_process score_plugin_deviceexplorer)
+  PLUGINS score_plugin_gfx score_lib_process score_plugin_deviceexplorer score_plugin_scenario)
 
 # The FFmpeg (libav) input/output device: its settings widget (781 lines, 0%)
 # and the preset enumerators (301 lines, 0%). Most of the widget is libav

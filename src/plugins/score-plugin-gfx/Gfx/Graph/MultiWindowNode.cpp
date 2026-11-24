@@ -110,6 +110,9 @@ public:
   struct PerWindowData
   {
     score::gfx::Pipeline pipeline;
+    QRhiTexture* patternTexture{};
+    Gfx::PreviewContent patternContent{Gfx::PreviewContent::LiveInput};
+    QSize patternSize;
     QRhiBuffer* uvRectUBO{};
     QRhiBuffer* blendUBO{};
     QRhiBuffer* warpUBO{};
@@ -430,6 +433,10 @@ public:
     for(auto& s : pw.samplers)
       delete s.sampler;
     pw.samplers = {};
+    if(pw.patternTexture) pw.patternTexture->deleteLater();
+    pw.patternTexture = nullptr;
+    pw.patternContent = Gfx::PreviewContent::LiveInput;
+    pw.patternSize = {};
     delete pw.uvRectUBO;
     pw.uvRectUBO = nullptr;
     delete pw.blendUBO;
@@ -485,6 +492,58 @@ public:
   }
 
 private:
+  bool selectPreviewTexture(int index, score::gfx::RenderList& renderer,
+                            QRhiResourceUpdateBatch*& res)
+  {
+    auto& pw = m_perWindow[index];
+    const auto content = m_multiNode.previewContent();
+    auto* texture = m_multiNode.offscreenTarget().texture;
+    if(content != Gfx::PreviewContent::LiveInput)
+    {
+      const bool global = content == Gfx::PreviewContent::GlobalText
+                       || content == Gfx::PreviewContent::GlobalTestCard;
+      const bool localCard = content == Gfx::PreviewContent::PerOutputTestCard
+                         || content == Gfx::PreviewContent::OutputIdentification;
+      const QSize size = global ? renderer.state.renderSize
+          : localCard ? m_multiNode.windowOutputs()[index].window->size() : QSize(1, 1);
+      if(!pw.patternTexture || pw.patternSize != size || pw.patternContent != content)
+      {
+        auto image = Gfx::renderCalibrationPattern(content, size, index)
+                         .convertToFormat(QImage::Format_RGBA8888);
+        if(image.isNull()) return false;
+        // QImage rows start at the top. GL's render-target sampling convention
+        // is Y-up; the existing source-rect shader expects that orientation.
+        if(renderer.state.rhi->isYUpInFramebuffer()) image = image.mirrored();
+        if(!pw.patternTexture || pw.patternSize != size)
+        {
+          auto* replacement = renderer.state.rhi->newTexture(QRhiTexture::RGBA8, size);
+          if(!replacement->create()) { delete replacement; return false; }
+          if(pw.patternTexture) pw.patternTexture->deleteLater();
+          pw.patternTexture = replacement;
+        }
+        if(!res) res = renderer.state.rhi->nextResourceUpdateBatch();
+        res->uploadTexture(pw.patternTexture, image);
+        pw.patternSize = size;
+        pw.patternContent = content;
+      }
+      texture = pw.patternTexture;
+    }
+    if(pw.samplers[0].texture != texture)
+    {
+      pw.samplers[0].texture = texture;
+      QRhiShaderResourceBinding extra[] = {
+        QRhiShaderResourceBinding::uniformBuffer(4, QRhiShaderResourceBinding::FragmentStage, pw.blendUBO),
+        QRhiShaderResourceBinding::uniformBuffer(5, QRhiShaderResourceBinding::FragmentStage, pw.warpUBO),
+        QRhiShaderResourceBinding::uniformBuffer(6, QRhiShaderResourceBinding::FragmentStage, pw.calibrationUBO)};
+      // Same binding layout; retain the pipeline and swapchain. Retire the old
+      // SRB only after frames already referencing it have finished.
+      pw.pipeline.srb->deleteLater();
+      pw.pipeline.srb = score::gfx::createDefaultBindings(
+          renderer, {}, nullptr, pw.uvRectUBO, pw.samplers, extra, 3);
+    }
+    return true;
+  }
+
   void renderSubRegion(
       int index, score::gfx::RenderList& renderer, QRhiCommandBuffer& cb,
       QRhiResourceUpdateBatch*& res)
@@ -509,15 +568,25 @@ private:
     if(!rt)
       return;
 
+    if(!selectPreviewTexture(index, renderer, res))
+    {
+      if(res) { res->release(); res = nullptr; }
+      return;
+    }
+
     // Update UBOs from live data (may have changed via device parameters)
     if(pw.uvRectUBO)
     {
       if(!res)
         res = renderer.state.rhi->nextResourceUpdateBatch();
 
+      const auto content = m_multiNode.previewContent();
+      const bool global = content == Gfx::PreviewContent::LiveInput
+                       || content == Gfx::PreviewContent::GlobalText
+                       || content == Gfx::PreviewContent::GlobalTestCard;
+      const QRectF rect = global ? wo.sourceRect : QRectF(0, 0, 1, 1);
       float rectData[4] = {
-          (float)wo.sourceRect.x(), (float)wo.sourceRect.y(),
-          (float)wo.sourceRect.width(), (float)wo.sourceRect.height()};
+          (float)rect.x(), (float)rect.y(), (float)rect.width(), (float)rect.height()};
       res->updateDynamicBuffer(pw.uvRectUBO, 0, sizeof(rectData), rectData);
     }
 

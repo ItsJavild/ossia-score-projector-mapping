@@ -25,6 +25,20 @@ int main(int argc, char** argv)
   try
   {
     using namespace Gfx;
+    check(renderCalibrationPattern(PreviewContent::LiveInput, {64, 32}, 0).isNull(),
+          "Live input does not allocate a test image");
+    const std::pair<PreviewContent, QColor> solids[] = {
+      {PreviewContent::Black, Qt::black}, {PreviewContent::White, Qt::white},
+      {PreviewContent::Gray, QColor(128, 128, 128)}, {PreviewContent::Red, Qt::red},
+      {PreviewContent::Green, Qt::green}, {PreviewContent::Blue, Qt::blue}};
+    for(const auto& [mode, color] : solids)
+      check(renderCalibrationPattern(mode, {32, 16}, 0).pixelColor(4, 4) == color,
+            "Production calibration texture has the selected solid color");
+    check(renderCalibrationPattern(PreviewContent::GlobalText, {5280, 1080}, 0).size()
+              == QSize(5280, 1080), "Production global text uses the shared canvas size");
+    check(renderCalibrationPattern(PreviewContent::OutputIdentification, {192, 144}, 0)
+              != renderCalibrationPattern(PreviewContent::OutputIdentification, {192, 144}, 1),
+          "Production identification textures distinguish outputs");
     OutputMapping legacy;
     check(!legacy.meshWarp.enabled(), "Legacy mappings must keep four-corner mode");
     check(legacy.calibration.isIdentity(), "Legacy colour calibration must be neutral");

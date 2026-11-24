@@ -292,6 +292,7 @@ void PreviewWidget::paintContent(QPainter& p, bool transform, bool calibrate)
 
   switch(m_content)
   {
+    case PreviewContent::LiveInput:
     case PreviewContent::Black:
       p.fillRect(rect(), Qt::black);
       return;

@@ -108,34 +108,7 @@ void WindowDevice::setupContextMenu(QMenu& menu) const
   {
     auto* action = menu.addAction(tr("Edit Live Mapping…"));
     connect(action, &QAction::triggered, this, [this] {
-      auto* self = const_cast<WindowDevice*>(this);
-      QDialog dialog;
-      dialog.setWindowTitle(tr("Live Multi-Window Mapping"));
-      dialog.resize(1100, 760);
-      auto* layout = new QVBoxLayout(&dialog);
-      auto* editor = new WindowSettingsWidget(&dialog, true);
-      editor->setSettings(m_settings);
-      layout->addWidget(editor);
-      const auto original = m_settings.deviceSpecificSettings.value<WindowSettings>().outputs;
-      editor->onLiveMappingsChanged = [guard = QPointer<WindowDevice>{self}](const auto& mappings) {
-        if(guard) guard->applyLiveMappings(mappings);
-      };
-      auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dialog);
-      layout->addWidget(buttons);
-      connect(buttons, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
-      connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
-      connect(this, &QObject::destroyed, &dialog, &QDialog::reject);
-      QPointer<WindowDevice> guard{self};
-      const int result = dialog.exec();
-      if(!guard) return;
-      if(result == QDialog::Accepted)
-      {
-        CommandDispatcher<> dispatcher{m_ctx.commandStack};
-        dispatcher.submit<Explorer::Command::UpdateDeviceSettings>(
-            m_ctx.plugin<Explorer::DeviceDocumentPlugin>(), m_settings.name, editor->getSettings());
-      }
-      else
-        self->applyLiveMappings(original);
+      const_cast<WindowDevice*>(this)->editSettingsInPlace();
     });
   }
   if(auto w = this->window())
@@ -153,6 +126,50 @@ void WindowDevice::setupContextMenu(QMenu& menu) const
     }
     menu.addAction(showhide);
   }
+}
+
+bool WindowDevice::editSettingsInPlace()
+{
+  auto* device = dynamic_cast<multiwindow_device*>(m_dev.get());
+  if(!device) return false;
+  auto* node = device->node();
+  const bool live = node->renderer() != nullptr;
+  const auto original = m_settings.deviceSpecificSettings.value<WindowSettings>().outputs;
+  QPointer<WindowDevice> guard{this};
+  QDialog dialog;
+  dialog.setWindowTitle(tr("Multi-Window Mapping"));
+  dialog.resize(1100, 760);
+  auto* layout = new QVBoxLayout(&dialog);
+  auto* editor = new WindowSettingsWidget(&dialog, live);
+  editor->setSettings(m_settings);
+  layout->addWidget(editor);
+  editor->onLiveMappingsChanged = [guard](const auto& mappings) {
+    if(guard) guard->applyLiveMappings(mappings);
+  };
+  editor->onLivePreviewChanged = [guard](PreviewContent content) {
+    if(!guard) return;
+    if(auto* dev = dynamic_cast<multiwindow_device*>(guard->getDevice()))
+      dev->node()->setPreviewContent(content);
+  };
+  auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dialog);
+  layout->addWidget(buttons);
+  connect(buttons, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
+  connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+  connect(this, &QObject::destroyed, &dialog, &QDialog::reject);
+  const int result = dialog.exec();
+  if(!guard) return true;
+  // The pattern is a temporary view override, never a saved device property.
+  if(auto* dev = dynamic_cast<multiwindow_device*>(getDevice()))
+    dev->node()->setPreviewContent(PreviewContent::LiveInput);
+  if(result == QDialog::Accepted)
+  {
+    CommandDispatcher<> dispatcher{m_ctx.commandStack};
+    dispatcher.submit<Explorer::Command::UpdateDeviceSettings>(
+        m_ctx.plugin<Explorer::DeviceDocumentPlugin>(), m_settings.name, editor->getSettings());
+  }
+  else if(live)
+    applyLiveMappings(original);
+  return true;
 }
 
 void WindowDevice::applyLiveMappings(const std::vector<OutputMapping>& mappings)

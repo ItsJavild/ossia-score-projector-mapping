@@ -63,6 +63,7 @@
 #include <QAbstractProxyModel>
 #include <QAction>
 #include <QClipboard>
+#include <QMetaMethod>
 #include <QComboBox>
 #include <QContextMenuEvent>
 #include <QDialog>
@@ -874,6 +875,20 @@ void DeviceExplorerWidget::edit()
   const auto& select = model()->nodeFromModelIndex(m_ntView->selectedIndex());
   if(select.is<Device::DeviceSettings>())
   {
+    // Optional protocol editor which retains a running output. Qt dispatch
+    // avoids coupling the explorer to the graphics plugin or changing vtables.
+    auto& device = model()->deviceModel().list().device(select.get<Device::DeviceSettings>().name);
+    const int method = device.metaObject()->indexOfMethod("editSettingsInPlace()");
+    if(method >= 0)
+    {
+      bool handled = false;
+      if(device.metaObject()->method(method).invoke(&device, Qt::DirectConnection,
+            Q_RETURN_ARG(bool, handled)) && handled)
+      {
+        updateActions();
+        return;
+      }
+    }
     if(!m_deviceDialog)
     {
       m_deviceDialog = new DeviceEditDialog{
