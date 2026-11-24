@@ -33,12 +33,15 @@ jobs:
       - name: Install build dependencies and NDI add-on
         shell: bash
         run: ./ci/win32.deps.sh
+      - name: Prepare pinned ONNX runtime
+        shell: pwsh
+        run: ./ci/projector-onnx-runtime.ps1
       - name: Enable compiler cache
         uses: mozilla-actions/sccache-action@v0.0.11
       - name: Build application and installer
         shell: bash
         env:
-          SCORE_EXTRA_CMAKE_ARGS: -DKFR_ARCH=generic -DCMAKE_C_COMPILER_LAUNCHER=sccache -DCMAKE_CXX_COMPILER_LAUNCHER=sccache
+          SCORE_EXTRA_CMAKE_ARGS: -DFETCHCONTENT_SOURCE_DIR_ONNXRUNTIME=C:/ossia-projector-onnxruntime -DKFR_ARCH=generic -DCMAKE_C_COMPILER_LAUNCHER=sccache -DCMAKE_CXX_COMPILER_LAUNCHER=sccache
         run: ./ci/win32.build.sh
       - name: Check mapping serialization
         shell: bash
